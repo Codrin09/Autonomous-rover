@@ -11,9 +11,8 @@ RPLidar lidar;
                         // This pin should connected with the RPLIDAR's MOTOCTRL signal        
 bool wasSet[361];
 unsigned short data[361];
-bool staph = false;
 
-volatile unsigned long lastTime;
+volatile unsigned long scanStartTime;
 bool toPrint = false;
 
 void setup() {
@@ -40,19 +39,16 @@ void loop() {
 
   if(toPrint){
     int errors = 0;
-    for(int i = 0 ; i <= 360; i++){
-      btSerial.print(i);
-      btSerial.print(" (");
-      btSerial.print(wasSet[i]);
-      btSerial.print("): ");
-      btSerial.println(data[i]);
+    for(int i = 0 ; i < 360; i++){
+      btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(data[i]));
       if(!wasSet[i])
         errors++;
 
       wasSet[i] = false;
+      data[i] = 0;
     }
 
-    lastTime = millis();
+    scanStartTime = millis();
     toPrint = false;
     // Serial.println(errors);
   }
@@ -64,11 +60,11 @@ void loop() {
     byte  quality  = lidar.getCurrentPoint().quality; //quality of the current measurement
 
     // read for 3s
-    if(millis() - lastTime < 2000){ 
+    if(millis() - scanStartTime < 2000){ 
       // Serial.print(",");
-      if(quality > 8 && distance < 2000){
+    if(quality > 8 && distance < 2000){
         wasSet[(int) round(angle)] = true;
-        data[(int) round(angle)] = round(distance);
+        data[(int) round(angle)] = int(distance);
       }
     }
     else{
@@ -84,14 +80,13 @@ void loop() {
     if (IS_OK(lidar.getDeviceInfo(info, 100))) {
       // detected...
       lidar.startScan();
-      lastTime = millis();
+      scanStartTime = millis();
       // start motor rotating at max allowed speed
       analogWrite(RPLIDAR_MOTOR, 255);
 
       delay(1000);
     }
   }
-
   check_bt();
 }
 
@@ -99,17 +94,19 @@ void check_bt(){
   if(btSerial.available() > 0){
     String incomingData = btSerial.readString();
     switch(incomingData.toInt()){
-      case 2:
-        Serial.println("Stop scanning and mapping");
-        analogWrite(RPLIDAR_MOTOR, 0);
-        wait = true;
-        break;
       case 1:
         Serial.println("Start scanning and mapping");
+        scanStartTime = millis();
         wait = false;
         break;
       default:
-        Serial.println("No valid command given");
+        Serial.println("Stop scanning");
+        analogWrite(RPLIDAR_MOTOR, 0);
+        for(int i = 0 ; i < 360; i++){
+          wasSet[i] = false;
+          data[i] = 0;
+        }
+        wait = true;
         break;
     }
   }

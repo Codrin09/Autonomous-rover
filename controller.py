@@ -2,6 +2,8 @@ import sys
 import signal
 import serial
 import select 
+import re
+import plotter
 
 """Opening of the serial port"""
 try:
@@ -16,7 +18,6 @@ def main():
     print("1 - Powering motors controlled by PID\n2 - Powering motors at maximum speed without PID")
     print("3 - Turn 45 degrees anti clockwise\n4 - Turn 90 degrees clockwise")
     print("5 - Turn 45 degrees clockwise\n6 - Turn 90 degrees clockwise")
-
     
     while True:
         while sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
@@ -29,7 +30,13 @@ def main():
         else:
             message_received = arduino.readline()
             if message_received is not b'':
-                print(message_received)
+                # print(re.sub(r'[^\w]', ' ', str(message_received)))
+                if message_received is b'Sending ladar readings\r\n':
+                    # update(0)
+                    plotter.update()
+                    print("sal")
+                else:
+                    print(message_received)
         # line = sys.stdin.readline()
         # arduino.write(line.encode())
         
