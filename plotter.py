@@ -7,29 +7,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import datetime
 
-"""Opening of the serial port"""
-try:
-    # arduino = serial.Serial("/dev/tty.usbmodem14101", 115200)
-    arduino = serial.Serial("/dev/tty.NICE-BT-DevB", 115200)
-    arduino.flushInput() #This gives the bluetooth a little kick
-except:
-    print('Please check the port')
-    sys.exit(0)
-
-matrix = [[0 for col in range(1001)] for row in range(1001)]
-changed = [0 for i in range(361)]
-
-baseX = baseY = 500
-matrix[baseX][baseY] = 1
-scans = 0
-
-
-cmap = ListedColormap(['k', 'w', 'r'])
-# create the figure
-fig, ax = plt.subplots()
-matrice = ax.matshow(matrix, cmap = cmap)
-plt.colorbar(matrice)
-
 def init():
     global distances, rawdata, wasSet, matrix
     """Initialising variables""" 
@@ -38,7 +15,7 @@ def init():
     wasSet = [0 for _ in range(361)]
     
     matrice.set_array(matrix)
-    
+
     line = "0"
     while int(line) != 1:
         print("Press 1 to start mapping")
@@ -47,20 +24,22 @@ def init():
 
     return matrice,
 
-def edit_point(x, y, action):
-    global matrix
-
-    left = -1
-    right = 2
+def edit_point(x, y, action, recently_set):
+    left = -2
+    right = 3
     if action == "create":
         action = 1
     else:
         action = 0
+        # left += 1
+        # right -= 1
 
     for i in range(left, right):
         for j in range(left, right):
             if x + i >= 0 and x + i <= 1000 and y + j >= 0 and y + j <= 1000:
                 try:
+                    if action == 1:
+                        recently_set[x+i][y+j] = 1
                     matrix[x+i][y+j] = action
                 except Exception as e:
                     print(e)
@@ -76,8 +55,7 @@ def update(index):
     print(datetime.datetime.now())
     for angle in range(360):
         rawdata[angle] = str(arduino.readline())[:-3]
-        print(rawdata[angle])
-        #print(rawdata[angle] + "(in update)") 
+        # print(rawdata[angle])
         split = rawdata[angle].split(":")
         try:
             new_distance = float(split[1][1:].replace("\\r", ""))
@@ -95,6 +73,8 @@ def update(index):
 
     print(datetime.datetime.now())
 
+    recently_set = [[0 for col in range(1001)] for row in range(1001)]
+
     count = 0 
     print("finish read")
     for angle in range(361):
@@ -108,7 +88,7 @@ def update(index):
             pointY = baseY + int(deltaY)
 
             #print (str(i) + ": " + str(xCoord + int(deltaX)) + " " + str(yCoord + int(deltaY)) + " " + str(distances[i]))
-            edit_point(pointX, pointY, "create")
+            edit_point(pointX, pointY, "create", recently_set)
             # matrix[pointX][pointY] = 1
             count+=1
 
@@ -125,8 +105,9 @@ def update(index):
 
             if baseX == pointX:
                 try:
-                    for y in range(minY + 1, maxY):
-                        edit_point(pointX, y, "delete")
+                    for y in range(minY + 1, maxY - 4):
+                        if recently_set[pointX][y] == 0:
+                            edit_point(pointX, y, "delete", recently_set)
                         # matrix[pointX][y] = 0
                 except Exception as e:
                     print(e)
@@ -136,13 +117,15 @@ def update(index):
                 x = y = 0
                 try:
                     if maxX - minX >=  maxY - minY:
-                        for x in range (minX + 1, maxX):
+                        for x in range (minX + 1, maxX - 4):
                             y = int((-1) * (a * x + c) / b)
-                            edit_point(x, y, "delete")
+                            if recently_set[x][y] == 0:
+                                edit_point(x, y, "delete", recently_set)
                     else:
-                        for y in range (minY + 1, maxY):
+                        for y in range (minY + 1, maxY - 4):
                             x = int((-1) * (b * y + c) / a)
-                            edit_point(x, y, "delete")
+                            if recently_set[x][y] == 0:
+                                edit_point(x, y, "delete", recently_set)
 
                     # matrix[x][y] = 0
                 except Exception as e:
@@ -160,7 +143,8 @@ def update(index):
 
                 try:
                     if pointX >= 0 and pointX <= 1000 and pointY >= 0 and pointY <= 1000:
-                        edit_point(pointX, pointY, "delete")
+                        if recently_set[pointX][pointY] == 0:
+                            edit_point(pointX, pointY, "delete", recently_set)
                         # matrix[pointX][pointY] = 0
                     else:
                         break;
@@ -198,8 +182,28 @@ def manual_move(scans):
 
 
 if __name__ == "__main__":
+    """Opening of the serial port"""
+    try:
+        # arduino = serial.Serial("/dev/tty.usbmodem14101", 115200)
+        arduino = serial.Serial("/dev/tty.NICE-BT-DevB", 115200)
+        arduino.flushInput() #This gives the bluetooth a little kick
+    except:
+        print('Please check the port')
+        sys.exit(0)
+
+    matrix = [[0 for col in range(1001)] for row in range(1001)]
+    changed = [0 for i in range(361)]
+
+    baseX = baseY = 500
+    matrix[baseX][baseY] = 1
+    scans = 0
+
+    cmap = ListedColormap(['k', 'w', 'r'])
+    # create the figure
+    fig, ax = plt.subplots(figsize = (8,8))
+    matrice = ax.matshow(matrix, cmap = cmap)
+    plt.colorbar(matrice)
     signal.signal(signal.SIGINT, signal_handler)
     # ani = animation.FuncAnimation(fig, update, frames=200, init_func = init, blit = True)
     ani = animation.FuncAnimation(fig, update, frames=200, interval=200, init_func = init, blit = True)
     plt.show()
-    main()
