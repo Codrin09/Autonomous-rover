@@ -6,6 +6,8 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import datetime
+from linear_regression import *
+import operator
 
 def init():
     global distances, rawdata, wasSet, matrix
@@ -24,27 +26,6 @@ def init():
 
     return matrice,
 
-def edit_point(x, y, action, recently_set):
-    left = -2
-    right = 3
-    if action == "create":
-        action = 1
-    else:
-        action = 0
-        # left += 1
-        # right -= 1
-
-    for i in range(left, right):
-        for j in range(left, right):
-            if x + i >= 0 and x + i <= 1000 and y + j >= 0 and y + j <= 1000:
-                try:
-                    if action == 1:
-                        recently_set[x+i][y+j] = 1
-                    matrix[x+i][y+j] = action
-                except Exception as e:
-                    print(e)
-                    print ("Edit point: " + str(x+i) + " " + str(y+j))
-
 def update(index):
     global distances, rawdata, wasSet, matrix, scans, baseX, baseY
     """Receiving data and storing it in a list"""
@@ -55,7 +36,7 @@ def update(index):
     print(datetime.datetime.now())
     for angle in range(360):
         rawdata[angle] = str(arduino.readline())[:-3]
-        # print(rawdata[angle])
+        print(rawdata[angle])
         split = rawdata[angle].split(":")
         try:
             new_distance = float(split[1][1:].replace("\\r", ""))
@@ -73,96 +54,178 @@ def update(index):
 
     print(datetime.datetime.now())
 
-    recently_set = [[0 for col in range(1001)] for row in range(1001)]
+    new_points = []
+    k = m = -1
+    cluster = [0 for i in range(360)]
+    clusterX = []
+    clusterY = []
+    cluster_ind = 1
 
     count = 0 
     print("finish read")
-    for angle in range(361):
+
+    for angle in range(360):
         if wasSet[angle] == 1:
             changed[angle] = 1
 
             deltaX = distances[angle] * math.sin(math.radians(angle)) / 4
             deltaY = distances[angle] * math.cos(math.radians(angle)) / 4
 
-            pointX = baseX + int(deltaX)
-            pointY = baseY + int(deltaY)
+            pointX = baseX + round(deltaX)
+            pointY = baseY + round(deltaY)
 
-            #print (str(i) + ": " + str(xCoord + int(deltaX)) + " " + str(yCoord + int(deltaY)) + " " + str(distances[i]))
-            edit_point(pointX, pointY, "create", recently_set)
-            # matrix[pointX][pointY] = 1
+            k, m, clusterX, clusterY, cluster, cluster_ind, new_points = feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster, cluster_ind, new_points)
             count+=1
-
-            a = baseY - pointY
-            b = pointX - baseX
-            c = baseX * (pointY - baseY) + baseY * (baseX - pointX)
-
-            x = y = 0
-
-            minX = min(baseX, pointX)
-            maxX = max(baseX, pointX)
-            minY = min(baseY, pointY)
-            maxY = max(baseY, pointY)
-
-            if baseX == pointX:
-                try:
-                    for y in range(minY + 1, maxY - 4):
-                        if recently_set[pointX][y] == 0:
-                            edit_point(pointX, y, "delete", recently_set)
-                        # matrix[pointX][y] = 0
-                except Exception as e:
-                    print(e)
-                    print("pointX, Y: " + str(pointX) + " " + str(y))
-                
-            else:
-                x = y = 0
-                try:
-                    if maxX - minX >=  maxY - minY:
-                        for x in range (minX + 1, maxX - 4):
-                            y = int((-1) * (a * x + c) / b)
-                            if recently_set[x][y] == 0:
-                                edit_point(x, y, "delete", recently_set)
-                    else:
-                        for y in range (minY + 1, maxY - 4):
-                            x = int((-1) * (b * y + c) / a)
-                            if recently_set[x][y] == 0:
-                                edit_point(x, y, "delete", recently_set)
-
-                    # matrix[x][y] = 0
-                except Exception as e:
-                    print(e)
-                    print("X,Y: " + str(x) + " " + str(y))
+            # edit_point(pointX, pointY, "create")
+            draw_line(baseX, baseY, pointX, pointY, "delete")
 
         elif changed[angle] == 1:
             changed[angle] = 0
-            for distance in range(2001):
+            #from 5 as 3*sqrt(2) ~ 4.2
+            for distance in range(5, 2001):
                 deltaX = distance * math.sin(math.radians(angle)) / 4
                 deltaY = distance * math.cos(math.radians(angle)) / 4
 
-                pointX = baseX + int(deltaX)
-                pointY = baseY + int(deltaY)
+                pointX = baseX + round(deltaX)
+                pointY = baseY + round(deltaY)
 
                 try:
                     if pointX >= 0 and pointX <= 1000 and pointY >= 0 and pointY <= 1000:
-                        if recently_set[pointX][pointY] == 0:
-                            edit_point(pointX, pointY, "delete", recently_set)
-                        # matrix[pointX][pointY] = 0
+                        edit_point(pointX, pointY, "delete")
                     else:
                         break;
                 except Exception as e:
                     print(e)
                     print("pointX, pointY: " + str(pointX) + " " + str(pointY))
 
+    index = 0
+    oldVal = 0
+    startX = startY = 0
+    #!Try to use linear regression to map the start and end of the line instead of using first and last point from cluster 
+    for i in range(360):
+        if cluster[i] != 0:
+            newX, newY = new_points[index]
+            # if oldVal == 0:
+            #     oldVal = cluster[i]
+            #     startX, startY = newX, newY
+            # elif oldVal != cluster[i]:
+            #     draw_line(startX, startY, lastX, lastY, "create", cluster[i])
+            #     startX, startY = newX, newY
+            #     oldVal = cluster[i]
+            # elif i == 359:
+            #     draw_line(startX, startY, newX, newY, "create", cluster[i])
+
+            print(i, ":", new_points[index], distances[i], cluster[i])
+            edit_point(newX, newY, "create", cluster[i])
+            lastX, lastY = newX, newY
+            index += 1
+
+    # arduino.write('2'.encode())
+    # while True:
+    #     pass
     print("******* count: " + str(count))
     matrice.set_array(matrix)
     # matrix = [[0 for col in range(1001)] for row in range(1001)]
 
     return matrice,
 
-def signal_handler(sig, frame):
-    print('Shutting down')
-    arduino.write('2'.encode())
-    arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob
-    sys.exit(0)
+def edit_point(x, y, action, value = None):
+    global matrix
+    left = -1
+    right = 2
+    if action == "create":
+        action = value
+    else:
+        action = 0
+        # left += 1
+        # right -= 1
+
+    for i in range(left, right):
+        for j in range(left, right):
+            if x + i >= 0 and x + i <= 1000 and y + j >= 0 and y + j <= 1000:
+                try:
+                    matrix[x+i][y+j] = action
+                except Exception as e:
+                    print(e)
+                    print ("Edit point: " + str(x+i) + " " + str(y+j))
+
+def draw_line(startX, startY, endX, endY, action, value = None):
+    minX, maxX = min(startX, endX), max(startX, endX)
+    minY, maxY = min(startY, endY), max(startY, endY)
+
+    if startX == endX:
+        #max - 2 because of 2 * padding / min + 3 because 2*padding + 1
+        for y in range(minY + 3, maxY - 2):
+            edit_point(startX, y, action, value)
+    elif startY == endY:
+        for x in range(minX + 3, minX - 2):
+            edit_point(x, startY, action, value)
+    else:
+        a = startY - endY
+        b = endX - startX
+        c = startX * (endY - startY) + startY * (startX - endX)
+        if maxX - minX >= maxY - minY:
+            for x in range (minX + 3, maxX - 2):
+                y = int((-1) * (a * x + c) / b)
+                edit_point(x, y, action, value)
+        else:
+            for y in range (minY + 3, maxY - 2):
+                x = int((-1) * (b * y + c) / a)
+                edit_point(x, y, action, value)
+
+    # k,m = linear_fit([startX, endX], [startY, endY])
+    # try:
+    #     if abs(startX - endX) > abs(startY - endY):
+    #         for x in range(startX, endX):
+    #             y = round(k * x + m)
+    #             edit_point(x, y, "create", value)
+    #     else:
+    #         for y in range(startY, endY):
+    #             x = round((y - m) / k)
+    #             edit_point(x, y, "create", value)
+    # except Exception as e:
+    #     print(e)
+    #     print(startX, startY, endX, endY)
+    
+def feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster, cluster_ind, new_points):
+    clusterX.append(pointX)
+    clusterY.append(pointY)
+    cluster[angle] = cluster_ind
+
+    if len(clusterX) > 1:
+        oldX, oldY = new_points[len(new_points) - 1]
+        newK, newM = linear_fit(clusterX, clusterY)
+
+        if k == m == -1:
+            k, m = newK, newM
+        expectedY = k * pointX + m
+        dist = points_distance(pointX, pointY, oldX, oldY)
+
+        if (dist < 40 and abs(pointY - expectedY) < 20) or dist == 0:
+            k, m = newK, newM
+        else:
+            # print(angle, pointX, pointY, oldX, oldY, "expected:", expectedY)
+            cluster_ind += 1
+            cluster[angle] = cluster_ind
+            clusterX = [pointX]
+            clusterY = [pointY]
+            k = m = -1
+            
+    if angle == 359 and cluster[0] != 0:
+        firstX, firstY = new_points[0]
+        expectedY = k * firstX + m
+        dist = points_distance(pointX, pointY, firstX, firstY)
+        if (dist < 40 and abs(pointY - expectedY) < 40) or dist == 0:
+            oldCluster = cluster[angle]
+            for i in reversed(range(len(cluster))):
+                if cluster[i] == oldCluster:
+                    cluster[i] = 1
+                else:
+                    break;
+
+    new_points.append((pointX, pointY))
+
+    return k, m, clusterX, clusterY, cluster, cluster_ind, new_points
 
 def manual_move(scans):
     global baseY
@@ -180,6 +243,14 @@ def manual_move(scans):
         arduino.write('1'.encode())
         baseY = 500
 
+def points_distance(x1, y1, x2, y2):
+    return math.sqrt(math.pow(x1 - x2, 2) + math.pow(y1 - y2, 2))
+
+def signal_handler(sig, frame):
+    print('Shutting down')
+    arduino.write('2'.encode())
+    arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob
+    sys.exit(0)
 
 if __name__ == "__main__":
     """Opening of the serial port"""
@@ -195,13 +266,13 @@ if __name__ == "__main__":
     changed = [0 for i in range(361)]
 
     baseX = baseY = 500
-    matrix[baseX][baseY] = 1
+    matrix[baseX][baseY] = 15
     scans = 0
 
     cmap = ListedColormap(['k', 'w', 'r'])
     # create the figure
-    fig, ax = plt.subplots(figsize = (8,8))
-    matrice = ax.matshow(matrix, cmap = cmap)
+    fig, ax = plt.subplots(figsize = (7,7))
+    matrice = ax.matshow(matrix, cmap = 'viridis')
     plt.colorbar(matrice)
     signal.signal(signal.SIGINT, signal_handler)
     # ani = animation.FuncAnimation(fig, update, frames=200, init_func = init, blit = True)
