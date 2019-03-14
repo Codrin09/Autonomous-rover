@@ -60,12 +60,12 @@ void loop() {
     byte  quality  = lidar.getCurrentPoint().quality; //quality of the current measurement
 
     // read for 3s
-    if(millis() - scanStartTime < 2000){ 
+    if(millis() - scanStartTime < 500){ 
       // Serial.print(",");
-    if(quality > 8 && distance < 2000){
-        wasSet[(int) round(angle)] = true;
-        data[(int) round(angle)] = int(distance);
-      }
+      if(quality > 8 && distance < 2000){
+          wasSet[(int) round(angle)] = true;
+          data[(int) round(angle)] = int(distance);
+        }
     }
     else{
       toPrint = true;

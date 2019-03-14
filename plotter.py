@@ -9,7 +9,7 @@ import datetime
 from linear_regression import *
 import operator
 
-def init():
+def init_map(arduino, testing = None):
     global distances, rawdata, wasSet, matrix
     """Initialising variables""" 
     distances = [0 for _ in range(361)]
@@ -18,15 +18,17 @@ def init():
     
     matrice.set_array(matrix)
 
-    line = "0"
-    while int(line) != 1:
-        print("Press 1 to start mapping")
-        line = sys.stdin.readline()
-    arduino.write(line.encode())
+    if testing == True:
+        line = "0"
+        while int(line) != 1:
+            print("Press 1 to start mapping")
+            line = sys.stdin.readline()
+        arduino.write(line.encode())
 
     return matrice,
 
-def update(index):
+def update_map(tag, arduino):
+    print("sall")
     global distances, rawdata, wasSet, matrix, scans, baseX, baseY
     """Receiving data and storing it in a list"""
     print("reading")
@@ -36,7 +38,7 @@ def update(index):
     print(datetime.datetime.now())
     for angle in range(360):
         rawdata[angle] = str(arduino.readline())[:-3]
-        print(rawdata[angle])
+        # print(rawdata[angle])
         split = rawdata[angle].split(":")
         try:
             new_distance = float(split[1][1:].replace("\\r", ""))
@@ -115,7 +117,7 @@ def update(index):
             # elif i == 359:
             #     draw_line(startX, startY, newX, newY, "create", cluster[i])
 
-            print(i, ":", new_points[index], distances[i], cluster[i])
+            # print(i, ":", new_points[index], distances[i], cluster[i])
             edit_point(newX, newY, "create", cluster[i])
             lastX, lastY = newX, newY
             index += 1
@@ -250,7 +252,23 @@ def signal_handler(sig, frame):
     print('Shutting down')
     arduino.write('2'.encode())
     arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob
-    sys.exit(0)
+    sys.exit(0) 
+
+def init_variables():
+    global matrix, changed, baseX, baseY, matrix, scans, cmap, matrice, fig, ax
+    matrix = [[0 for col in range(1001)] for row in range(1001)]
+    changed = [0 for i in range(361)]
+
+    baseX = baseY = 500
+    matrix[baseX][baseY] = 15
+    scans = 0
+
+    cmap = ListedColormap(['k', 'w', 'r'])
+
+    # create the figure
+    fig, ax = plt.subplots(figsize = (7,7))
+    matrice = ax.matshow(matrix, cmap = 'viridis')
+    plt.colorbar(matrice)
 
 if __name__ == "__main__":
     """Opening of the serial port"""
@@ -262,19 +280,9 @@ if __name__ == "__main__":
         print('Please check the port')
         sys.exit(0)
 
-    matrix = [[0 for col in range(1001)] for row in range(1001)]
-    changed = [0 for i in range(361)]
+    init_variables()
 
-    baseX = baseY = 500
-    matrix[baseX][baseY] = 15
-    scans = 0
-
-    cmap = ListedColormap(['k', 'w', 'r'])
-    # create the figure
-    fig, ax = plt.subplots(figsize = (7,7))
-    matrice = ax.matshow(matrix, cmap = 'viridis')
-    plt.colorbar(matrice)
     signal.signal(signal.SIGINT, signal_handler)
     # ani = animation.FuncAnimation(fig, update, frames=200, init_func = init, blit = True)
-    ani = animation.FuncAnimation(fig, update, frames=200, interval=200, init_func = init, blit = True)
+    ani = animation.FuncAnimation(fig, update_map(0, arduino), frames=200, interval=200, init_func = init_map(arduino, True), blit = True)
     plt.show()

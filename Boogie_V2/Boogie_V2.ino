@@ -82,15 +82,20 @@ void setMotorControl(){
   }
 }
 
+#include "/Users/codrin/Documents/Projects/3rdYear/Boogie_V2/Lidar.h"
 void setup(){ 
   Serial3.begin(115200);
   lidar.begin(Serial3);
   pinMode(RPLIDAR_MOTOR, OUTPUT);
 
   Serial.begin(115200);
-  Serial.println("start");                // a personal quirk
+  Serial.println("start");
 
   btSerial.begin(115200);
+  //Flush all outdated messages
+  while(btSerial.available() > 0){
+    btSerial.read();
+  }
 
   setEncoders();
   setMotorControl();
@@ -103,56 +108,72 @@ void setup(){
   speedScalar[3] = 8;
   speedScalar[0] = 4;
   speedScalar[2] = 4;
+
 }
 
 void loop(){
   check_bt();
 }
 
+
 void check_bt(){
   if(btSerial.available() > 0){
       Serial.println("Incomming data on BT");
 
       String incomingData = btSerial.readString();
+      float trip_distance = 0;
       switch(incomingData.toInt()){
         case 1:
-          Serial.println("Powering motors controlled by PID");
           btSerial.println("Powering motors controlled by PID");
 
           // scanStartTime = millis();
           // while(check_ladar());
 
-          power_by_PID(0);
+          // trip_distance = power_by_PID(1000);
+          // btSerial.println("Trip distance: " + String(trip_distance));
+
 
           // scanStartTime = millis();
           // while(check_ladar());
 
           break;
         case 2:
-          Serial.println("Powering motors at maximum speed without PID");
           btSerial.println("Powering motors at maximum speed without PID");
           power_no_PID(1000, 255);
 
           break;
         case 3:
-          Serial.println("Turn 45 degrees anti clockwise");
           btSerial.println("Turn 45 degrees anti clockwise");
           rotate(45, 1);
           break;
         case 4:
-          Serial.println("Turn 90 degrees clockwise");
           btSerial.println("Turn 90 degrees clockwise");
           rotate(90, 1);
           break;
         case 5:
-          Serial.println("Turn 45 degrees clockwise");
           btSerial.println("Turn 45 degrees clockwise");
           rotate(45, 0);
           break;
         case 6:
-          Serial.println("Turn 90 degrees clockwise");
           btSerial.println("Turn 90 degrees clockwise");
           rotate(90, 0);
+          break;
+        case 8:
+          btSerial.println("Start scanning and mapping");
+          scanStartTime = millis();
+          // while(check_ladar());
+          // send_readings();
+          while(true){
+            scanStartTime = millis();
+            while(check_ladar());
+            send_readings();
+            if(btSerial.available() > 0)
+              break;
+          }
+
+          analogWrite(RPLIDAR_MOTOR, 0);
+          // send_readings();
+          btSerial.println("Stop scanning");
           break;
         default:
           Serial.println("No valid command given");
@@ -163,16 +184,15 @@ void check_bt(){
     }
 }
 
-void power_by_PID(int dist){
+float power_by_PID(int dist){
   bool stopping = false;
   double total_spid = 0;
 
   for(int i = 0; i < noOfMotors; i++){
     Setpoint[i] = desiredSpeed - speedScalar[i];
   }
-
   while(true){
-    if(distance[0] >= dist && dist > 0){
+    if(get_travel_distance() >= dist && dist > 0){
       stopMotors(&stopping);
     }
 
@@ -230,9 +250,10 @@ void power_by_PID(int dist){
     }
     if(total_spid == 0 && stopping){
       power_off_motors();
-      break;
+      return get_travel_distance();
     }
   }
+  return 0.0f;
 }
 
 
@@ -241,47 +262,6 @@ void stopMotors(bool *stopping){
     Setpoint[i] = 0;
   }
   *stopping = true;
-}
-
-bool check_ladar(){
-  if (IS_OK(lidar.waitPoint())) {
-    float distance = lidar.getCurrentPoint().distance; //distance value in mm unit
-    float angle    = lidar.getCurrentPoint().angle; //anglue value in degree
-    bool  startBit = lidar.getCurrentPoint().startBit; //whether this point is belong to a new scan
-    byte  quality  = lidar.getCurrentPoint().quality; //quality of the current measurement
-
-    // read for 3s
-    if(millis() - scanStartTime < 2000){ 
-      // Serial.print(",");
-      if(quality > 8 && distance < 2000){
-        wasSet[(int) int(angle)] = true;
-        data[(int) int(angle)] = int(distance);
-      }
-    }
-    else{
-      btSerial.println("Sending ladar readings");
-      analogWrite(RPLIDAR_MOTOR, 0);
-      toPrint = true;
-      return false;
-    }
-    //perform data processing here... 
-    
-  } else {
-    analogWrite(RPLIDAR_MOTOR, 0); //stop the rplidar motor
-    
-    // try to detect RPLIDAR... 
-    rplidar_response_device_info_t info;
-    if (IS_OK(lidar.getDeviceInfo(info, 100))) {
-      // detected...
-      lidar.startScan();
-      scanStartTime = millis();
-      // start motor rotating at max allowed speed
-      analogWrite(RPLIDAR_MOTOR, 255);
-
-      delay(1000);
-    }
-  }
-  return true;
 }
 
 void power_no_PID(int dist, int PWM){
@@ -307,9 +287,10 @@ void power_no_PID(int dist, int PWM){
   power_off_motors();
 }
 
-double get_travel_distance(){
-  btSerial.println(distance[0] - distance[1]);
-  return distance[0];
+float get_travel_distance(){
+  float dist =(distance[0] + distance[1] + distance[2] + distance[3]) / 4;
+  // btSerial.println(dist);
+  return dist;
 }
 
 void power_off_motors(){

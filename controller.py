@@ -2,8 +2,11 @@ import sys
 import signal
 import serial
 import select 
-import re
 import plotter
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
+import numpy as np
+import datetime
 
 """Opening of the serial port"""
 try:
@@ -18,7 +21,14 @@ def main():
     print("1 - Powering motors controlled by PID\n2 - Powering motors at maximum speed without PID")
     print("3 - Turn 45 degrees anti clockwise\n4 - Turn 90 degrees clockwise")
     print("5 - Turn 45 degrees clockwise\n6 - Turn 90 degrees clockwise")
-    
+    print("8 - Start scanning and mapping")
+
+    plotter.init_variables()   
+    plotter.init_map(arduino)
+
+    plt.ion()
+    plt.show()
+
     while True:
         while sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
             line = sys.stdin.readline()
@@ -31,11 +41,20 @@ def main():
             message_received = arduino.readline()
             if message_received is not b'':
                 # print(re.sub(r'[^\w]', ' ', str(message_received)))
-                if message_received is b'Sending ladar readings\r\n':
-                    # update(0)
-                    plotter.update()
-                    print("sal")
+                if message_received == b'Sending ladar readings\r\n':
+                    print("Received ladar readings")
+                    print(datetime.datetime.now())
+
+                    plotter.update_map(0, arduino)
+
+                    print("done updating")
+                    print(datetime.datetime.now())
+                    plt.draw()
+                    plt.pause(0.001)
+                    print("done drawing")
+                    print(datetime.datetime.now())
                 else:
+                    # pass
                     print(message_received)
         # line = sys.stdin.readline()
         # arduino.write(line.encode())
