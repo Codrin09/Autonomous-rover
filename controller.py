@@ -23,7 +23,7 @@ def main():
     print("5 - Turn 45 degrees clockwise\n6 - Turn 90 degrees clockwise")
     print("8 - Start scanning and mapping")
 
-    plotter.init_variables()   
+    plotter.init_variables(arduino)   
     plotter.init_map(arduino)
 
     plt.ion()
@@ -41,21 +41,33 @@ def main():
             message_received = arduino.readline()
             if message_received is not b'':
                 # print(re.sub(r'[^\w]', ' ', str(message_received)))
-                if message_received == b'Sending ladar readings\r\n':
+                if message_received == b'Sending lidar readings\r\n':
                     print("Received ladar readings")
-                    print(datetime.datetime.now())
 
-                    plotter.update_map(0, arduino)
-
-                    print("done updating")
-                    print(datetime.datetime.now())
+                    plotter.update_map(0)
                     plt.draw()
                     plt.pause(0.001)
-                    print("done drawing")
+                    # else:
+                    #! Try robot mapping while moving without kalman just by using encoders
+                    #     pass
+                elif message_received == b'Get position\r\n':
+                    # arduino.write(input("Send 1 after position moved").encode())
+
+                    while arduino.readline() != b'Sending lidar readings\r\n':
+                        pass
+                    print("Getting current position")
                     print(datetime.datetime.now())
+                    (newX, newY, newTh) = plotter.get_position()
+                    plotter.baseX = newX
+                    plotter.baseY = newY
+                    plotter.baseTh = newTh
+
+                    print("Done getting position")
+                    print(datetime.datetime.now())
+                    # print(newX, newY)
                 else:
-                    # pass
                     print(message_received)
+                
         # line = sys.stdin.readline()
         # arduino.write(line.encode())
         

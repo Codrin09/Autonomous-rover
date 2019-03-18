@@ -6,13 +6,10 @@
 #define TXx 11
 
 SoftwareSerial btSerial(RXd, TXx); // RX, TX
+float get_travel_distance();
+#include "Lidar.h"
 
-RPLidar lidar;
-#define RPLIDAR_MOTOR 3 // The PWM pin for control the speed of RPLIDAR's motor.
-                        // This pin should connected with the RPLIDAR's MOTOCTRL signal
-bool wasSet[361];
-unsigned short data[361];
-bool toPrint = false;
+unsigned short oldX, oldY, oldTh;
 
 const byte interruptPin = 2;
 volatile long count = 0;
@@ -31,11 +28,11 @@ double desiredSpeed = 500;
 int speedScalar[4];
 double Setpoint[] = {desiredSpeed, desiredSpeed, desiredSpeed, desiredSpeed};
 
-static const double coeffP = 0.2;
-static const double coeffI = 0.7;
-static const double coeffD = 0;
+//0.2 0.7
+static const double coeffP = 0.1;
+static const double coeffI = 1.5;
+static const double coeffD = 0.0;
 
-volatile unsigned long scanStartTime;
 volatile long lastPrintTime = 0;
 int noOfMotors = 4;
 
@@ -72,9 +69,6 @@ void setMotorControl(){
     digitalWrite(pin, direction[pin - 42]);
   }
 
-  // digitalWrite(44, 1);
-  // digitalWrite(45, 0);
-
   //motors 1-4 for PWM
   for(int pin = 4; pin < 8; pin++){
     pinMode(pin, OUTPUT);
@@ -82,7 +76,6 @@ void setMotorControl(){
   }
 }
 
-#include "/Users/codrin/Documents/Projects/3rdYear/Boogie_V2/Lidar.h"
 void setup(){ 
   Serial3.begin(115200);
   lidar.begin(Serial3);
@@ -109,6 +102,8 @@ void setup(){
   speedScalar[0] = 4;
   speedScalar[2] = 4;
 
+  oldX = oldY = 500;
+  oldTh = 0;
 }
 
 void loop(){
@@ -118,162 +113,154 @@ void loop(){
 
 void check_bt(){
   if(btSerial.available() > 0){
-      Serial.println("Incomming data on BT");
+    Serial.println("Incomming data on BT");
 
-      String incomingData = btSerial.readString();
-      float trip_distance = 0;
-      switch(incomingData.toInt()){
-        case 1:
-          btSerial.println("Powering motors controlled by PID");
-
-          // scanStartTime = millis();
-          // while(check_ladar());
-
-          // trip_distance = power_by_PID(1000);
-          // btSerial.println("Trip distance: " + String(trip_distance));
-
-
-          // scanStartTime = millis();
-          // while(check_ladar());
-
-          break;
-        case 2:
-          btSerial.println("Powering motors at maximum speed without PID");
-          power_no_PID(1000, 255);
-
-          break;
-        case 3:
-          btSerial.println("Turn 45 degrees anti clockwise");
-          rotate(45, 1);
-          break;
-        case 4:
-          btSerial.println("Turn 90 degrees clockwise");
-          rotate(90, 1);
-          break;
-        case 5:
-          btSerial.println("Turn 45 degrees clockwise");
-          rotate(45, 0);
-          break;
-        case 6:
-          btSerial.println("Turn 90 degrees clockwise");
-          rotate(90, 0);
-          break;
-        case 8:
-          btSerial.println("Start scanning and mapping");
+    String incomingData = btSerial.readString();
+    Serial.println(incomingData);
+    float trip_distance = 0;
+    bool running;
+    switch(incomingData.toInt()){
+      case 1:
+        btSerial.println("Powering motors controlled by PID");
+        
+        for(int i = 0 ; i < 2; i++){
           scanStartTime = millis();
-          // while(check_ladar());
-          // send_readings();
-          while(true){
-            scanStartTime = millis();
-            while(check_ladar());
-            send_readings();
-            if(btSerial.available() > 0)
-              break;
+          while(check_lidar());
+          send_readings();
+        }
+
+        oldMotorTime = micros();
+        while(power_by_PID(1000));
+        stopMotors();
+
+        btSerial.println("Get position");
+        // while(true){
+        //   if(btSerial.available() > 0){
+        //     String input = btSerial.readString();
+        //     if(input.toInt() == 1)
+        //       break;
+        //   }
+        // }
+        scanStartTime = millis();
+        while(check_lidar());
+        send_readings();
+
+        for(int i = 0 ; i < 2; i++){
+          scanStartTime = millis();
+          while(check_lidar());
+          send_readings();
+        }
+        
+        btSerial.println("Finish operation 1");
+        break;
+      case 2:
+        btSerial.println("Powering motors at maximum speed without PID");
+        power_no_PID(1000, 255);
+
+        break;
+      case 3:
+        btSerial.println("Turn 45 degrees anti clockwise");
+        rotate(45, 1);
+        break;
+      case 4:
+        btSerial.println("Turn 90 degrees clockwise");
+        rotate(90, 1);
+        break;
+      case 5:
+        btSerial.println("Turn 45 degrees clockwise");
+        rotate(45, 0);
+        break;
+      case 6:
+        btSerial.println("Turn 90 degrees clockwise");
+        rotate(90, 0);
+        break;
+      case 8:
+        btSerial.println("Start scanning and mapping");
+
+        running = true;
+        while(running){
+          scanStartTime = millis();
+          while(check_lidar());
+          send_readings();
+          if(btSerial.available() > 0){
+            btSerial.readString();
+            running = false;
           }
+        }
+        btSerial.println("Stop scanning");
 
-          analogWrite(RPLIDAR_MOTOR, 0);
-          // send_readings();
-          btSerial.println("Stop scanning");
-          break;
-        default:
-          Serial.println("No valid command given");
-          break;
-      }
-
-      reset_motors();
+        break;
+      default:
+        btSerial.println("No valid command given");
+        break;
     }
+    reset_motors();
+  }
 }
 
-float power_by_PID(int dist){
-  bool stopping = false;
-  double total_spid = 0;
-
+bool power_by_PID(int dist){
   for(int i = 0; i < noOfMotors; i++){
     Setpoint[i] = desiredSpeed - speedScalar[i];
   }
-  while(true){
-    if(get_travel_distance() >= dist && dist > 0){
-      stopMotors(&stopping);
-    }
 
-    newMotorTime = millis();
-    double total_spid = 0;
+  update_speed();
 
-    if(newMotorTime - oldMotorTime >= 100){
-
-      double totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000.0;
-
-      // btSerial.println(String(impulses[0]) + " "+ String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
-
-      //Impulses per 100ms
-      Input[0] = Input[2] = (impulses[0] + impulses[2]) * 1.0 / (2 * totalTime);
-      Input[1] = Input[3] = (impulses[1] + impulses[3]) * 1.0 / (2 * totalTime);
-
-      // btSerial.println(String(Input[0]) + " "+ String(Input[1]));
-      // print_encoder_distances();
-
-      for(int i = 0; i < 4; i++){
-        spid[i] = 60 * (Input[i] * 3.0 / 1000.0) / totalTime;
-        total_spid += spid[i];
-        
-        impulses[i] = 0;
-        if(motor_pid[i].Compute()){
-          analogWrite(motorControl[2*i], (int) Output[i]);
-        }
-      }
-      oldMotorTime = newMotorTime;
-    }
-    if(btSerial.available()){
-      String incomingData = btSerial.readString();
-      bool cont = true;
-      switch (incomingData.toInt()){
-        case 2:
-          btSerial.println("Scaling motor 0 speed by: " + String(++speedScalar[0]));
-          break;
-        case 3:
-          btSerial.println("Scaling motor 0 speed by: " + String(--speedScalar[0]));
-          break;
-        case 4:
-          btSerial.println("Scaling motor 1 speed by: " + String(++speedScalar[1]));
-          break;
-        case 5:
-          btSerial.println("Scaling motor 1 speed by " + String(--speedScalar[1]));
-          break;
-        default:
-          cont = false;
-          btSerial.println("No valid command received");
-          break;
-      }
-      if(cont)
-        continue;
-      stopMotors(&stopping);
-    }
-    if(total_spid == 0 && stopping){
-      power_off_motors();
-      return get_travel_distance();
-    }
-  }
-  return 0.0f;
+  if(get_travel_distance() > dist && dist != 0)
+    return false;
+  return true;
 }
 
+float update_speed(){
+  newMotorTime = micros();
+  if(newMotorTime - oldMotorTime >= 100000){
+    float total_spid = 0;
+    float totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000000.0;
 
-void stopMotors(bool *stopping){
+    // btSerial.println(String(impulses[0]) + " "+ String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
+    // btSerial.println(newMotorTime - oldMotorTime);
+
+    //Impulses per 100ms
+    Input[0] = Input[2] = (impulses[0] + impulses[2]) * 1.0 / (2 * totalTime);
+    Input[1] = Input[3] = (impulses[1] + impulses[3]) * 1.0 / (2 * totalTime);
+
+    // btSerial.println(String(Input[0]) + " "+ String(Input[1]));
+    // print_encoder_distances();
+
+    for(int i = 0; i < noOfMotors; i++){
+      spid[i] = 60 * (Input[i] * 3.0 / 1000) / totalTime;
+      total_spid += spid[i];
+      
+      impulses[i] = 0;
+      if(motor_pid[i].Compute()){
+        analogWrite(motorControl[2*i], round(Output[i]));
+      }
+    }
+    oldMotorTime = newMotorTime;
+
+    return total_spid;
+  }
+
+  return -1;
+}
+
+void stopMotors(){
   for(int i = 0; i < noOfMotors; i++){
     Setpoint[i] = 0;
   }
-  *stopping = true;
+  while(update_speed() != 0.0);
+  power_off_motors();
 }
 
 void power_no_PID(int dist, int PWM){
 
-  for(int i = 0; i < 4; i++){
+  for(int i = 0; i < noOfMotors; i++){
     analogWrite(motorControl[2*i], PWM);
   }
   bool moving  = true;
   while(moving){
     bool printed = print_encoder_distances();
     if(printed){
-      for(int i = 0; i < 4; i++){
+      for(int i = 0; i < noOfMotors; i++){
         impulses[i] = 0;
         distance[i] = 0;
       }
@@ -288,8 +275,8 @@ void power_no_PID(int dist, int PWM){
 }
 
 float get_travel_distance(){
-  float dist =(distance[0] + distance[1] + distance[2] + distance[3]) / 4;
-  // btSerial.println(dist);
+  float dist = (distance[0] + distance[1] + distance[2] + distance[3]) / 4;
+  // btSerial.println((distance[0] - distance[1] + distance[2] - distance[3]));
   return dist;
 }
 
@@ -301,7 +288,7 @@ void power_off_motors(){
 }
 
 void reset_motors(){
-  for(int i = 0; i < 4; i++){
+  for(int i = 0; i < noOfMotors; i++){
     distance[i] = 0;
     impulses[i] = 0;
   }
@@ -354,9 +341,8 @@ void test_motor(int motorNo){
   if(millis() - oldMotorTime >= 1000){
     newMotorTime = millis();
     double totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000.0;
-    // btSerial.println(String(impulses[0]) + " "+ String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
 
-    for(int i = 0; i < 4; i++){
+    for(int i = 0; i < noOfMotors; i++){
       if(motorNo == 4 || i == motorNo){
         analogWrite(motorControl[2*i], 255);
         spid[i] = 60 * (impulses[i] * 3.0 / 1000.0) / totalTime;  

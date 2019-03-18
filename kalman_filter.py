@@ -38,10 +38,11 @@ def kalman():
                                         filtered_state_covariance = P_now,
                                         observation = measurement)
 
-        print(x_now)
-        print(measurement)
+        # print(x_now)
+        # print(measurement)
         print("Time to update kf3: %s seconds" % (time.time() - time_before))
         x_new[i, :] = x_now
+        print(x_new)
         i = i + 1
 
     plt.figure(3)

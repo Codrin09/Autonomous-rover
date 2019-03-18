@@ -1,4 +1,13 @@
-bool check_ladar(){
+bool wasSet[360];
+unsigned short data[360];
+float travel_distance[360];
+
+RPLidar lidar;
+#define RPLIDAR_MOTOR 3 // The PWM pin for control the speed of RPLIDAR's motor.
+                        // This pin should connected with the RPLIDAR's MOTOCTRL signal
+volatile unsigned long scanStartTime;
+
+bool check_lidar(){
   if (IS_OK(lidar.waitPoint())) {
     float distance = lidar.getCurrentPoint().distance; //distance value in mm unit
     float angle    = lidar.getCurrentPoint().angle; //anglue value in degree
@@ -7,18 +16,18 @@ bool check_ladar(){
 
     // read for 3s
     if(millis() - scanStartTime < 500){ 
-      // Serial.print(",");
+      int aprox_angle = round(angle);
       if(quality > 8 && distance < 2000){
-          wasSet[(int) round(angle)] = true;
-          data[(int) round(angle)] = int(distance);
-        }
+        wasSet[aprox_angle] = true;
+        data[aprox_angle] = int(distance);
+      }
+      travel_distance[aprox_angle] = get_travel_distance();
     }
     else{
       return false;
-    }
-    //perform data processing here... 
-    
-  } else {
+    }    
+  } 
+  else {
     analogWrite(RPLIDAR_MOTOR, 0); //stop the rplidar motor
     
     // try to detect RPLIDAR... 
@@ -38,14 +47,16 @@ bool check_ladar(){
 }
 
 void send_readings(){
-  btSerial.println("Sending ladar readings");
+  btSerial.println("Sending lidar readings");
+
   int errors = 0;
   for(int i = 0 ; i < 360; i++){
-    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(data[i]));
+    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(data[i]) + " : " + String(travel_distance[i]));
     if(!wasSet[i])
       errors++;
 
     wasSet[i] = false;
     data[i] = 0;
+    travel_distance[i] = 0;
   }
 }
