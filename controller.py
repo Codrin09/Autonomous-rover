@@ -7,6 +7,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime
+import hashlib
 
 """Opening of the serial port"""
 try:
@@ -33,7 +34,11 @@ def main():
         while sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
             line = sys.stdin.readline()
             if line:
-                arduino.write(line.encode())
+                #arduino.write(line.encode())
+                arduino.write(bytes(line,'utf-8'))
+                hash_object = hashlib.md5(line.encode())
+                # print(hash_object.hexdigest())
+                # arduino.write(hash_object.hexdigest().encode())
             else: # an empty line means stdin has been closed
                 print('eof')
                 exit(0)
@@ -51,7 +56,7 @@ def main():
                     #! Try robot mapping while moving without kalman just by using encoders
                     #     pass
                 elif message_received == b'Get position\r\n':
-                    # arduino.write(input("Send 1 after position moved").encode())
+                    arduino.write(input("Press 1 after position moved ").encode())
 
                     while arduino.readline() != b'Sending lidar readings\r\n':
                         pass

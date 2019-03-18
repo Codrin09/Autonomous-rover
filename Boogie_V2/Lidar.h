@@ -1,6 +1,6 @@
 bool wasSet[360];
 unsigned short data[360];
-float travel_distance[360];
+float travel_distance;
 
 RPLidar lidar;
 #define RPLIDAR_MOTOR 3 // The PWM pin for control the speed of RPLIDAR's motor.
@@ -21,7 +21,6 @@ bool check_lidar(){
         wasSet[aprox_angle] = true;
         data[aprox_angle] = int(distance);
       }
-      travel_distance[aprox_angle] = get_travel_distance();
     }
     else{
       return false;
@@ -51,12 +50,11 @@ void send_readings(){
 
   int errors = 0;
   for(int i = 0 ; i < 360; i++){
-    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(data[i]) + " : " + String(travel_distance[i]));
+    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(data[i]) + " : " + String(get_travel_distance()));
     if(!wasSet[i])
       errors++;
 
     wasSet[i] = false;
     data[i] = 0;
-    travel_distance[i] = 0;
   }
 }

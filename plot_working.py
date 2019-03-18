@@ -15,7 +15,7 @@ def init_map(testing = None):
     distances = [0 for _ in range(360)]
     rawdata= [0 for _ in range(360)]
     wasSet = [0 for _ in range(360)]
-    travelDistance = 0
+    travelDistance = [0 for _ in range(360)]
     sin = []
     cos = []
     for angle in range(360):
@@ -33,7 +33,7 @@ def init_map(testing = None):
 
     return matrice,
 def handle_scans():
-    global rawdata, wasSet, distances, travelDistance, arduino, baseTh, baseX, baseY
+    global rawdata, wasSet, distances, travelDistance, arduino, baseTh
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
         rawdata[real_angle] = str(arduino.readline())[:-3].replace("\\r", "")
@@ -47,16 +47,13 @@ def handle_scans():
             if new_set == 1:
                 distances[real_angle] = new_distance
             
-            travelDistance = new_travel_dist
+            #! Travel distance here
+            # travelDistance[angle] = new_travel_dist
             wasSet[real_angle] = new_set
 
         except Exception as e:
             print(e)
             print (rawdata[real_angle])
-            
-    baseX -= round(math.cos(math.radians(baseTh)) * travelDistance / 4);
-    baseY -= round(math.sin(math.radians(baseTh)) * travelDistance / 4);
-
 def update_map(tag):
     global distances, rawdata, wasSet, matrix, scans, baseX, baseY, baseTh, changed, travelDistance, arduino
     """Receiving data and storing it in a list"""
@@ -81,19 +78,22 @@ def update_map(tag):
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
         
+        newBaseX = baseX + round(math.sin(math.radians(baseTh)) * travelDistance[real_angle] / 4);
+        newBaseY = baseY + round(math.cos(math.radians(baseTh)) * travelDistance[real_angle] / 4);
+
         if wasSet[real_angle] == 1:
             changed[real_angle] = 1
 
             deltaX = distances[real_angle] * math.sin(math.radians(real_angle)) / 4
             deltaY = distances[real_angle] * math.cos(math.radians(real_angle)) / 4
 
-            pointX = baseX + round(deltaX)
-            pointY = baseY + round(deltaY)
+            pointX = newBaseX + round(deltaX)
+            pointY = newBaseY + round(deltaY)
 
             k, m, clusterX, clusterY, cluster, cluster_ind, new_points = feature_extraction(k, m, clusterX, clusterY, pointX, pointY, real_angle, cluster, cluster_ind, new_points)
             count+=1
             # edit_point(pointX, pointY, "create")
-            draw_line(baseX, baseY, pointX, pointY, "delete")
+            draw_line(newBaseX, newBaseY, pointX, pointY, "delete")
 
         #! Assuming we have no moving obstacles we don't need this else check for changed[angle] is 1
         elif changed[real_angle] == -1:
@@ -104,8 +104,8 @@ def update_map(tag):
                 deltaX = distance * math.sin(math.radians(real_angle)) / 4
                 deltaY = distance * math.cos(math.radians(real_angle)) / 4
 
-                pointX = baseX + round(deltaX)
-                pointY = baseY + round(deltaY)
+                pointX = newBaseX + round(deltaX)
+                pointY = newBaseY + round(deltaY)
 
                 try:
                     if pointX >= 0 and pointX <= 1000 and pointY >= 0 and pointY <= 1000:
@@ -119,38 +119,23 @@ def update_map(tag):
     index = 0
     oldVal = 0
     startX = startY = 0
-    xCoords = []
-    yCoords = []
     #!Try to use linear regression to map the start and end of the line instead of using first and last point from cluster 
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
         if cluster[real_angle] != 0:
             newX, newY = new_points[index]
-            # if oldVal == 0:
-            #     oldVal = cluster[real_angle]
-            #     startX, startY = newX, newY
-            # elif oldVal != cluster[real_angle]:
-            #     draw_line(startX, startY, lastX, lastY, "create", cluster[real_angle])
-            #     k, m = linear_fit(xCoords, yCoords)
-            #     for x in xCoords:
-            #         y = round(k * x + m)
-            #         # edit_point(x, y, "create", cluster[real_angle])
-            #     xCoords = []
-            #     yCoords = []                
-            #     startX, startY = newX, newY
-            #     oldVal = cluster[real_angle]
-            # elif real_angle == 359:
-            #     draw_line(startX, startY, newX, newY, "create", cluster[real_angle])
-            #     k, m = linear_fit(xCoords, yCoords)
-            #     for x in xCoords:
-            #         y = round(k * x + m)
-            #         # edit_point(x, y, "create", cluster[real_angle])
-            # xCoords.append(newX)
-            # yCoords.append(newY)
+            if oldVal == 0:
+                oldVal = cluster[real_angle]
+                startX, startY = newX, newY
+            elif oldVal != cluster[real_angle]:
+                draw_line(startX, startY, lastX, lastY, "create", cluster[real_angle])
+                startX, startY = newX, newY
+                oldVal = cluster[real_angle]
+            elif real_angle == 359:
+                draw_line(startX, startY, newX, newY, "create", cluster[real_angle])
 
             # print(i, ":", new_points[index], distances[i], cluster[i])
-            edit_point(newX, newY, "create", cluster[real_angle])
-
+            # edit_point(newX, newY, "create", cluster[i])
             lastX, lastY = newX, newY
             index += 1
 
@@ -170,48 +155,9 @@ def get_position():
 
     x = baseX
     y = baseY
+    # x = 250
+    # y = 500
 
-    left = -24
-    right = 25
-    maxMatches = 0
-    gX = gY = gTh = 0   
-
-    current_observations = get_observations(x, y)
-    current_observations =  sorted(current_observations, key = lambda x: (x[0], x[1]))
-    print("No of observations:",len(current_observations))
-
-    for i in range(left, right, 2):
-        for j in range(left, right, 2):
-            if valid_point(x + i, y + j):
-                matches = simulate_point(x+i, y+j)
-                start_angle = 0
-                if matches >  maxMatches:
-                    maxMatches = matches
-                    gX, gY, gTh = x+i, y+j, (baseTh + start_angle) % 360
-
-    z = simulate_observations(gX, gY)
-    z =  sorted(z, key = lambda x: (x[0], x[1]))
-    print("SIMULATION")
-    pprint.pprint(z)
-    print("ACTUAL OBSERVATION")
-    pprint.pprint(current_observations)
-
-    first_obs_angle = current_observations[0][2]
-    suited_obs_angle = None
-    for obs in z:
-        if abs(first_obs_angle - obs[2]) < 30:
-            suited_obs_angle = obs[2]
-            break
-    if first_obs_angle - suited_obs_angle > 0:
-        gTh += 359 - (first_obs_angle - suited_obs_angle)
-    else:
-        gTh += suited_obs_angle - first_obs_angle
-    gTh %= 360
-    print("Best match for position is",gX, gY, gTh, maxMatches)
-    return (gX, gY, gTh)
-
-def get_observations(x, y):
-    global distances, sin, cos, baseTh
     current_observations = []
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
@@ -222,13 +168,47 @@ def get_observations(x, y):
             pointX = x + round(deltaX)
             pointY = y + round(deltaY)
 
-            if(valid_point(pointX, pointY)):
-                current_observations.append((pointX, pointY, real_angle))
-    return current_observations
-         
+            current_observations.append((pointX, pointY, real_angle))
+    
+    left = -24
+    right = 25
+
+    print("No of observations:",len(current_observations))
+
+    maxMatches = 0
+    gX = gY = gTh = 0
+    for i in range(left, right, 4):
+        for j in range(left, right, 4):
+            if valid_point(x + i, y + j):
+                z = simulate_observations(x + i, y + j)
+                matches = 0
+                start_angle = -1
+                for h in range(len(current_observations)):
+                    for k in range(len(z)):
+                        if z[k] is None:
+                            continue
+                        if abs(z[k][0] - current_observations[h][0]) < 2 and abs(z[k][1] - current_observations[h][1]) < 2:
+                            if start_angle == -1:
+                                angle_obs = current_observations[h][2]
+                                angle_sim = z[k][2]
+                                if angle_obs > angle_sim:
+                                    # start_angle = 359 - (angle_obs - angle_sim)
+                                    start_angle = 0
+                                else:
+                                    # start_angle = angle_sim - angle_obs
+                                    start_angle = 0
+                            matches += 1
+                            break
+                if matches >  maxMatches:
+                    maxMatches = matches
+                    gX, gY, gTh = x+i, y+j, (baseTh + start_angle) % 360
+    print(gX, gY, gTh, maxMatches)
+    return (gX, gY, gTh)
+                
 def simulate_observations(x, y):
     global matrix, sin, cos, baseTh
-    z = []
+    a = datetime.datetime.now()
+    z = [None for _ in range(360)]
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
         pointX = pointY = -1
@@ -243,45 +223,40 @@ def simulate_observations(x, y):
                 if matrix[pointX][pointY] == 0:
                     continue
                 else:
-                    z.append((pointX, pointY, real_angle))
+                    z[angle] = ((pointX, pointY, real_angle))
             break
+    print(datetime.datetime.now() - a)
     return z
 
 def simulate_point(x, y):
-    global baseTh, matrix, distances, sin, cos
+    global baseTh
     matches = 0
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
         if wasSet[real_angle] == 1:
-            deltaX = distances[real_angle] * sin[real_angle] / 4
-            deltaY = distances[real_angle] * cos[real_angle] / 4
+            deltaX = distances[real_angle] * sin[real_angle]
+            deltaY = distances[real_angle] * cos[real_angle]
 
-            pointX = x + round(deltaX)
-            pointY = y + round(deltaY)
-            
-            if valid_point(pointX, pointY) and matrix[pointX][pointY] > 0:
+            pointX = x + deltaX
+            pointY = y + deltaY
+
+            if(matrix[pointX][pointY] == 1):
                 matches += 1
     return matches
 def edit_point(x, y, action, value = None):
     global matrix
-    left = -5
-    right = 6
-
-    if not valid_point(x, y):
-        return
-
+    left = -1
+    right = 2
     if action == "create":
         action = value
-        if matrix[x][y] != 0:
-            return
     else:
         action = 0
-        if matrix[x][y] == 0:
-            return
+        # left += 1
+        # right -= 1
 
     for i in range(left, right):
         for j in range(left, right):
-            if valid_point(x+i, y+j):
+            if x + i >= 0 and x + i <= 1000 and y + j >= 0 and y + j <= 1000:
                 try:
                     matrix[x+i][y+j] = action
                 except Exception as e:
@@ -292,28 +267,39 @@ def draw_line(startX, startY, endX, endY, action, value = None):
     minX, maxX = min(startX, endX), max(startX, endX)
     minY, maxY = min(startY, endY), max(startY, endY)
 
-    #max - 2 because of 2 * padding / min + 3 because 2*padding + 1
-    padding_min = 2 * 5 + 1
-    padding_max = 2 * 5
-
     if startX == endX:
-        for y in range(minY + padding_min, maxY - padding_max):
+        #max - 2 because of 2 * padding / min + 3 because 2*padding + 1
+        for y in range(minY + 3, maxY - 2):
             edit_point(startX, y, action, value)
     elif startY == endY:
-        for x in range(minX + padding_min, maxX - padding_max):
+        for x in range(minX + 3, minX - 2):
             edit_point(x, startY, action, value)
     else:
         a = startY - endY
         b = endX - startX
         c = startX * (endY - startY) + startY * (startX - endX)
         if maxX - minX >= maxY - minY:
-            for x in range (minX + padding_min, maxX - padding_max):
+            for x in range (minX + 3, maxX - 2):
                 y = int((-1) * (a * x + c) / b)
                 edit_point(x, y, action, value)
         else:
-            for y in range (minY + padding_min, maxY - padding_max):
+            for y in range (minY + 3, maxY - 2):
                 x = int((-1) * (b * y + c) / a)
                 edit_point(x, y, action, value)
+
+    # k,m = linear_fit([startX, endX], [startY, endY])
+    # try:
+    #     if abs(startX - endX) > abs(startY - endY):
+    #         for x in range(startX, endX):
+    #             y = round(k * x + m)
+    #             edit_point(x, y, "create", value)
+    #     else:
+    #         for y in range(startY, endY):
+    #             x = round((y - m) / k)
+    #             edit_point(x, y, "create", value)
+    # except Exception as e:
+    #     print(e)
+    #     print(startX, startY, endX, endY)
     
 def feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster, cluster_ind, new_points):
     clusterX.append(pointX)

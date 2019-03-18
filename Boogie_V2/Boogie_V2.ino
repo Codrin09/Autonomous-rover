@@ -123,27 +123,29 @@ void check_bt(){
       case 1:
         btSerial.println("Powering motors controlled by PID");
         
-        for(int i = 0 ; i < 2; i++){
+        for(int i = 0 ; i < 3; i++){
           scanStartTime = millis();
           while(check_lidar());
           send_readings();
         }
 
         oldMotorTime = micros();
-        while(power_by_PID(1000));
+        while(power_by_PID(500));
         stopMotors();
 
         btSerial.println("Get position");
-        // while(true){
-        //   if(btSerial.available() > 0){
-        //     String input = btSerial.readString();
-        //     if(input.toInt() == 1)
-        //       break;
-        //   }
-        // }
+        while(true){
+          if(btSerial.available() > 0){
+            String input = btSerial.readString();
+            if(input.toInt() == 1)
+              break;
+          }
+        }
         scanStartTime = millis();
         while(check_lidar());
         send_readings();
+        //!REMEMBER TO RESET TRAVEL DISTANCE
+        reset_travel_distance();
 
         for(int i = 0 ; i < 2; i++){
           scanStartTime = millis();
@@ -174,6 +176,14 @@ void check_bt(){
         btSerial.println("Turn 90 degrees clockwise");
         rotate(90, 0);
         break;
+      case 7:
+        btSerial.println("Testing");
+        while(true){
+          while(btSerial.available()){
+            String testData = btSerial.readString();
+            btSerial.println(testData);
+          }
+        }
       case 8:
         btSerial.println("Start scanning and mapping");
 
@@ -280,6 +290,11 @@ float get_travel_distance(){
   return dist;
 }
 
+void reset_travel_distance(){
+  for(int i = 0; i < noOfMotors; i++)
+    distance[i] = 0;
+}
+
 void power_off_motors(){
   btSerial.println("Powering off motors");
   for(int i = 0; i < noOfMotors; i++){
@@ -296,32 +311,34 @@ void reset_motors(){
 
 void rotate(int deg, int anti_clock){
   //impulses for 90 deg rotation
-  const int quarterCircle = 472;
+  const int quarterCircle = 472.5;
 
-  int motor1, motor2;
+  int start_reverse;
   if(anti_clock == 1){
-    motor1 = 0;
-    motor2 = 2;
+    start_reverse = 1;
   } 
   else{
-    motor1 = 2;
-    motor2 = 0;
+    start_reverse = 3;
   }
+  digitalWrite(motorControl[start_reverse], HIGH);
+  digitalWrite(motorControl[start_reverse + 4], LOW);
 
   double percentage = deg * 1.0 / 90;
-  //Switch direction of rotation of motor
-  digitalWrite(motorControl[motor1 + 1],1);
 
-  analogWrite(motorControl[motor1],255);
-  analogWrite(motorControl[motor2],255);
+  for(int i = 0; i < noOfMotors; i++){
+    analogWrite(motorControl[2 * i],255);
+  }
+  
 
   int val = quarterCircle * percentage;
 
-  while(impulses[0] < val || impulses[1] < val);
+  while(impulses[0] < val || impulses[1] < val || impulses[2] < val || impulses[3] < val);
 
-  digitalWrite(motorControl[motor1 + 1],0);
-  analogWrite(motorControl[motor1],0);
-  analogWrite(motorControl[motor2],0);
+  digitalWrite(motorControl[start_reverse], LOW);
+  digitalWrite(motorControl[start_reverse + 4], HIGH);
+
+  power_off_motors();
+  reset_travel_distance();
 }
 
 bool print_encoder_distances(){
