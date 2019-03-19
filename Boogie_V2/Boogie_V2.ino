@@ -7,6 +7,8 @@
 
 SoftwareSerial btSerial(RXd, TXx); // RX, TX
 float get_travel_distance();
+
+#include "MPU9150.h"
 #include "Lidar.h"
 
 unsigned short oldX, oldY, oldTh;
@@ -14,12 +16,12 @@ unsigned short oldX, oldY, oldTh;
 const byte interruptPin = 2;
 volatile long count = 0;
 
-double distOnImpulse = 6.0 * PI * 30 / 1000.0;
+float distOnImpulse = 6.0 * PI * 30 / 1000.0;
 volatile long impulses[] = {0, 0, 0, 0};
 unsigned long newMotorTime, oldMotorTime = 0;
 
-double distance[] = {0, 0, 0, 0};
-double spid[] = {0, 0, 0, 0};
+float motor_distance[] = {0, 0, 0, 0};
+float spid[] = {0, 0, 0, 0};
 int direction[] = {0, 0 , 1, 1};
 
 double Input[4], Output[4];
@@ -34,7 +36,9 @@ static const double coeffI = 1.5;
 static const double coeffD = 0.0;
 
 volatile long lastPrintTime = 0;
-int noOfMotors = 4;
+
+//!Either 2 or 4
+int noOfMotors = 2;
 
 PID motor_pid[]={
   PID(&Input[0], &Output[0], &Setpoint[0], coeffP, coeffI, coeffD, DIRECT),
@@ -54,7 +58,7 @@ void (*interImpulse[4])() = {
   interM0, interM1, interM2, interM3
 };
 void setEncoders(){
-  for(int pin = 18; pin < 22; pin++){
+  for(int pin = 18; pin < 18 + noOfMotors; pin++){
     pinMode(pin, INPUT);
     attachInterrupt(digitalPinToInterrupt(pin), interImpulse[pin - 18], CHANGE);
   }
@@ -63,14 +67,14 @@ void setEncoders(){
 int motorControl[8];
 void setMotorControl(){
   //motors 1-4 for DIR
-  for(int pin = 42; pin < 46; pin++){
+  for(int pin = 42; pin < 42 + noOfMotors; pin++){
     pinMode(pin, OUTPUT);
     motorControl[2 * (pin - 42) + 1] = pin;
     digitalWrite(pin, direction[pin - 42]);
   }
 
   //motors 1-4 for PWM
-  for(int pin = 4; pin < 8; pin++){
+  for(int pin = 4; pin < 4 + noOfMotors; pin++){
     pinMode(pin, OUTPUT);
     motorControl[2 * (pin - 4)] = pin;
   }
@@ -92,7 +96,7 @@ void setup(){
 
   setEncoders();
   setMotorControl();
-  
+
   for(int i = 0; i < noOfMotors; i++){
     setPid(motor_pid[i], i + 5);
     speedScalar[i] = 0;
@@ -104,6 +108,7 @@ void setup(){
 
   oldX = oldY = 500;
   oldTh = 0;
+  setup_gyro();
 }
 
 void loop(){
@@ -117,12 +122,14 @@ void check_bt(){
 
     String incomingData = btSerial.readString();
     Serial.println(incomingData);
-    float trip_distance = 0;
-    bool running;
+
+    float old_th = 0;
+    bool stopping = false;
+
     switch(incomingData.toInt()){
       case 1:
         btSerial.println("Powering motors controlled by PID");
-        
+        old_th = get_gyro();
         for(int i = 0 ; i < 3; i++){
           scanStartTime = millis();
           while(check_lidar());
@@ -130,7 +137,7 @@ void check_bt(){
         }
 
         oldMotorTime = micros();
-        while(power_by_PID(500));
+        while(power_by_PID(1000));
         stopMotors();
 
         btSerial.println("Get position");
@@ -141,11 +148,19 @@ void check_bt(){
               break;
           }
         }
+
         scanStartTime = millis();
         while(check_lidar());
         send_readings();
         //!REMEMBER TO RESET TRAVEL DISTANCE
         reset_travel_distance();
+
+        do{
+          old_th -= get_gyro();
+          update_gyro();
+        }while(isnan(old_th));
+        btSerial.println("New orientation");
+        btSerial.println(old_th);
 
         for(int i = 0 ; i < 2; i++){
           scanStartTime = millis();
@@ -178,17 +193,23 @@ void check_bt(){
         break;
       case 7:
         btSerial.println("Testing");
+        Serial.println(get_travel_distance());
         while(true){
-          while(btSerial.available()){
+          if(btSerial.available()){
             String testData = btSerial.readString();
             btSerial.println(testData);
+            if(testData == "exit"){
+              break;
+            }
           }
         }
+        btSerial.println("breaked");
       case 8:
         btSerial.println("Start scanning and mapping");
 
         running = true;
         while(running){
+          // update_gyro();
           scanStartTime = millis();
           while(check_lidar());
           send_readings();
@@ -206,6 +227,7 @@ void check_bt(){
     }
     reset_motors();
   }
+  update_gyro();
 }
 
 bool power_by_PID(int dist){
@@ -247,9 +269,10 @@ float update_speed(){
     }
     oldMotorTime = newMotorTime;
 
+    update_gyro();
     return total_spid;
   }
-
+  update_gyro();
   return -1;
 }
 
@@ -272,7 +295,7 @@ void power_no_PID(int dist, int PWM){
     if(printed){
       for(int i = 0; i < noOfMotors; i++){
         impulses[i] = 0;
-        distance[i] = 0;
+        motor_distance[i] = 0;
       }
     }
 
@@ -285,14 +308,17 @@ void power_no_PID(int dist, int PWM){
 }
 
 float get_travel_distance(){
-  float dist = (distance[0] + distance[1] + distance[2] + distance[3]) / 4;
-  // btSerial.println((distance[0] - distance[1] + distance[2] - distance[3]));
-  return dist;
+  float dist = 0;
+  for(int i = 0; i < noOfMotors; i++){
+    dist += motor_distance[i];
+  }
+  // btSerial.println((motor_distance[0] - motor_distance[1] + motor_distance[2] - motor_distance[3]));
+  return dist / noOfMotors;
 }
 
 void reset_travel_distance(){
   for(int i = 0; i < noOfMotors; i++)
-    distance[i] = 0;
+    motor_distance[i] = 0;
 }
 
 void power_off_motors(){
@@ -304,7 +330,7 @@ void power_off_motors(){
 
 void reset_motors(){
   for(int i = 0; i < noOfMotors; i++){
-    distance[i] = 0;
+    motor_distance[i] = 0;
     impulses[i] = 0;
   }
 }
@@ -323,7 +349,7 @@ void rotate(int deg, int anti_clock){
   digitalWrite(motorControl[start_reverse], HIGH);
   digitalWrite(motorControl[start_reverse + 4], LOW);
 
-  double percentage = deg * 1.0 / 90;
+  float percentage = deg * 1.0 / 90;
 
   for(int i = 0; i < noOfMotors; i++){
     analogWrite(motorControl[2 * i],255);
@@ -342,10 +368,18 @@ void rotate(int deg, int anti_clock){
 }
 
 bool print_encoder_distances(){
-    if(millis() - lastPrintTime > 1000){
-    Serial.println(distance[0] - distance[1] + distance[2] - distance[3]);
-
-    btSerial.println(String(impulses[0]) + " " + String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
+  if(millis() - lastPrintTime > 1000){
+    float sum = 0;
+    String outString = "";
+    for(int i = 0; i < noOfMotors; i++){
+      if(i % 2 == 0)
+        sum += motor_distance[i];
+      else
+        sum -+ motor_distance[i];
+      outString += String(impulses[i]) + " ";
+    }
+    Serial.println(sum);
+    btSerial.println(outString);
 
     lastPrintTime = millis();
     return true;
@@ -357,7 +391,7 @@ bool print_encoder_distances(){
 void test_motor(int motorNo){
   if(millis() - oldMotorTime >= 1000){
     newMotorTime = millis();
-    double totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000.0;
+    float totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000.0;
 
     for(int i = 0; i < noOfMotors; i++){
       if(motorNo == 4 || i == motorNo){
@@ -371,7 +405,7 @@ void test_motor(int motorNo){
   }
 }
 
-void interM0(){impulses[0]++; distance[0] += distOnImpulse;}
-void interM1(){impulses[1]++; distance[1] += distOnImpulse;}
-void interM2(){impulses[2]++; distance[2] += distOnImpulse;}
-void interM3(){impulses[3]++; distance[3] += distOnImpulse;}
+void interM0(){impulses[0]++; motor_distance[0] += distOnImpulse;}
+void interM1(){impulses[1]++; motor_distance[1] += distOnImpulse;}
+void interM2(){impulses[2]++; motor_distance[2] += distOnImpulse;}
+void interM3(){impulses[3]++; motor_distance[3] += distOnImpulse;}

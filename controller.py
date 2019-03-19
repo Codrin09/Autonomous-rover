@@ -70,6 +70,10 @@ def main():
                     print("Done getting position")
                     print(datetime.datetime.now())
                     # print(newX, newY)
+                elif message_received == b'New orientation\r\n':
+                    message_received = str(arduino.readline())[:-3].replace("\\r", "")
+                    print("New orientation received with delta", float(message_received[3:-1]))
+                    plotter.baseTh +=  round(float(message_received[2:]))
                 else:
                     print(message_received)
                 

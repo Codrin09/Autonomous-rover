@@ -1,5 +1,5 @@
 bool wasSet[360];
-unsigned short data[360];
+unsigned short lidar_data[360];
 float travel_distance;
 
 RPLidar lidar;
@@ -7,19 +7,23 @@ RPLidar lidar;
                         // This pin should connected with the RPLIDAR's MOTOCTRL signal
 volatile unsigned long scanStartTime;
 
-bool check_lidar(){
+bool check_lidar(bool stopping){
   if (IS_OK(lidar.waitPoint())) {
     float distance = lidar.getCurrentPoint().distance; //distance value in mm unit
     float angle    = lidar.getCurrentPoint().angle; //anglue value in degree
     bool  startBit = lidar.getCurrentPoint().startBit; //whether this point is belong to a new scan
     byte  quality  = lidar.getCurrentPoint().quality; //quality of the current measurement
 
-    // read for 3s
+    if(distance < 100){
+      stopping = true
+    }
+
+    // read for 500ms
     if(millis() - scanStartTime < 500){ 
       int aprox_angle = round(angle);
       if(quality > 8 && distance < 2000){
         wasSet[aprox_angle] = true;
-        data[aprox_angle] = int(distance);
+        lidar_data[aprox_angle] = int(distance);
       }
     }
     else{
@@ -40,8 +44,7 @@ bool check_lidar(){
       delay(1000);
     }
     scanStartTime = millis();
-  }
-
+  } 
   return true;
 }
 
@@ -50,11 +53,12 @@ void send_readings(){
 
   int errors = 0;
   for(int i = 0 ; i < 360; i++){
-    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(data[i]) + " : " + String(get_travel_distance()));
+    // Serial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
+    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
     if(!wasSet[i])
       errors++;
 
     wasSet[i] = false;
-    data[i] = 0;
+    lidar_data[i] = 0;
   }
 }

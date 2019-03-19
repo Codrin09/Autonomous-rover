@@ -108,7 +108,7 @@ def update_map(tag):
                 pointY = baseY + round(deltaY)
 
                 try:
-                    if pointX >= 0 and pointX <= 1000 and pointY >= 0 and pointY <= 1000:
+                    if pointX >= 0 and pointX <= 2000 and pointY >= 0 and pointY <= 2000:
                         edit_point(pointX, pointY, "delete")
                     else:
                         break;
@@ -160,7 +160,7 @@ def update_map(tag):
     return matrice,
 
 def valid_point(x, y):
-    if x >= 0 and x <= 1000 and y >= 0 and y <= 1000:
+    if x >= 0 and x <= 2000 and y >= 0 and y <= 2000:
         return True
     return False
 
@@ -191,22 +191,22 @@ def get_position():
 
     z = simulate_observations(gX, gY)
     z =  sorted(z, key = lambda x: (x[0], x[1]))
-    print("SIMULATION")
-    pprint.pprint(z)
-    print("ACTUAL OBSERVATION")
-    pprint.pprint(current_observations)
+    # print("SIMULATION")
+    # pprint.pprint(z)
+    # print("ACTUAL OBSERVATION")
+    # pprint.pprint(current_observations)
 
-    first_obs_angle = current_observations[0][2]
-    suited_obs_angle = None
-    for obs in z:
-        if abs(first_obs_angle - obs[2]) < 30:
-            suited_obs_angle = obs[2]
-            break
-    if first_obs_angle - suited_obs_angle > 0:
-        gTh += 359 - (first_obs_angle - suited_obs_angle)
-    else:
-        gTh += suited_obs_angle - first_obs_angle
-    gTh %= 360
+    # first_obs_angle = current_observations[0][2]
+    # suited_obs_angle = None
+    # for obs in z:
+    #     if abs(first_obs_angle - obs[2]) < 30:
+    #         suited_obs_angle = obs[2]
+    #         break
+    # if first_obs_angle - suited_obs_angle > 0:
+    #     gTh += 359 - (first_obs_angle - suited_obs_angle)
+    # else:
+    #     gTh += suited_obs_angle - first_obs_angle
+    # gTh %= 360
     print("Best match for position is",gX, gY, gTh, maxMatches)
     return (gX, gY, gTh)
 
@@ -271,7 +271,8 @@ def edit_point(x, y, action, value = None):
         return
 
     if action == "create":
-        action = value
+        # action = value
+        action = 14
         if matrix[x][y] != 0:
             return
     else:
@@ -293,8 +294,8 @@ def draw_line(startX, startY, endX, endY, action, value = None):
     minY, maxY = min(startY, endY), max(startY, endY)
 
     #max - 2 because of 2 * padding / min + 3 because 2*padding + 1
-    padding_min = 2 * 5 + 1
-    padding_max = 2 * 5
+    padding_min = 2 * 6 + 1
+    padding_max = 2 * 6
 
     if startX == endX:
         for y in range(minY + padding_min, maxY - padding_max):
@@ -382,12 +383,12 @@ def signal_handler(sig, frame):
 
 def init_variables(btConnection = None):
     global matrix, changed, baseX, baseY, baseTh, matrix, scans, cmap, matrice, fig, ax, arduino
-    matrix = [[0 for col in range(1001)] for row in range(1001)]
+    matrix = [[0 for col in range(2001)] for row in range(2001)]
     changed = [0 for i in range(360)]
 
     if btConnection != None:
         arduino = btConnection
-    baseX = baseY = 500
+    baseX = baseY = 1000
     baseTh = 0
     matrix[baseX][baseY] = 15
     scans = 0
