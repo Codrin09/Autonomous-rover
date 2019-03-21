@@ -8,6 +8,7 @@ from matplotlib.colors import ListedColormap
 import datetime
 from linear_regression import *
 import pprint
+import random
 
 def init_map(testing = None):
     global distances, rawdata, wasSet, matrix, travelDistance, arduino, sin, cos
@@ -164,12 +165,14 @@ def valid_point(x, y):
         return True
     return False
 
-def get_position():
-    global wasSet, distances, baseX, baseY, baseTh
+def get_position(distance):
+    global wasSet, baseX, baseY, baseTh
     handle_scans()
 
-    x = baseX
-    y = baseY
+    x = baseX + round(math.sin(baseTh) * distance)
+    y = baseY + round(math.cos(baseTh) * distance)
+
+    print("Aproximate position is", x, y)
 
     left = -24
     right = 25
@@ -196,17 +199,6 @@ def get_position():
     # print("ACTUAL OBSERVATION")
     # pprint.pprint(current_observations)
 
-    # first_obs_angle = current_observations[0][2]
-    # suited_obs_angle = None
-    # for obs in z:
-    #     if abs(first_obs_angle - obs[2]) < 30:
-    #         suited_obs_angle = obs[2]
-    #         break
-    # if first_obs_angle - suited_obs_angle > 0:
-    #     gTh += 359 - (first_obs_angle - suited_obs_angle)
-    # else:
-    #     gTh += suited_obs_angle - first_obs_angle
-    # gTh %= 360
     print("Best match for position is",gX, gY, gTh, maxMatches)
     return (gX, gY, gTh)
 
@@ -376,7 +368,7 @@ def points_distance(x1, y1, x2, y2):
     return math.sqrt(math.pow(x1 - x2, 2) + math.pow(y1 - y2, 2))
 
 def signal_handler(sig, frame):
-    print('Shutting down')
+    print('Shutting down plotter')
     arduino.write('2'.encode())
     arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob
     sys.exit(0) 

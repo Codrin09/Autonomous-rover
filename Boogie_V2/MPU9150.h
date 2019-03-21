@@ -93,6 +93,7 @@ void setup_gyro() {
 
         // get expected DMP packet size for later comparison
         packetSize = mpu.dmpGetFIFOPacketSize();
+        btSerial.println("Gyroscope initialized");
     } else {
         // ERROR!
         // 1 = initial memory load failed
@@ -105,33 +106,40 @@ void setup_gyro() {
 }
 
 void update_gyro(){
-    // if programming failed, don't try to do anything
-    if (!dmpReady || !mpuInterrupt) return;
+    while(true){
 
-    // reset interrupt flag and get INT_STATUS byte
-    mpuInterrupt = false;
-    mpuIntStatus = mpu.getIntStatus();
+        // if programming failed, don't try to do anything
+        if (!dmpReady || !mpuInterrupt)
+            continue;
 
-    // get current FIFO count
-    fifoCount = mpu.getFIFOCount();
+        // reset interrupt flag and get INT_STATUS byte
+        mpuInterrupt = false;
+        mpuIntStatus = mpu.getIntStatus();
 
-    // check for overflow (this should never happen unless our code is too inefficient)
-    if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
-        // reset so we can continue cleanly
-        mpu.resetFIFO();
-        Serial.println(F("FIFO overflow!"));
+        // get current FIFO count
+        fifoCount = mpu.getFIFOCount();
 
-    // otherwise, check for DMP data ready interrupt (this should happen frequently)
-    } else if (mpuIntStatus & 0x01) {
-        // wait for correct available data length, should be a VERY short wait
-        while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+        // check for overflow (this should never happen unless our code is too inefficient)
+        if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+            // reset so we can continue cleanly
+            mpu.resetFIFO();
+            // Serial.println(F("FIFO overflow!"));
+            // btSerial.println("FIFO overflow!");
 
-        // read a packet from FIFO
-        mpu.getFIFOBytes(fifoBuffer, packetSize);
-        
-        // track FIFO count here in case there is > 1 packet available
-        // (this lets us immediately read more without waiting for an interrupt)
-        fifoCount -= packetSize;
+        // otherwise, check for DMP data ready interrupt (this should happen frequently)
+        } else if (mpuIntStatus & 0x01) {
+            // wait for correct available data length, should be a VERY short wait
+            while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+
+            // read a packet from FIFO
+            mpu.getFIFOBytes(fifoBuffer, packetSize);
+            
+            // track FIFO count here in case there is > 1 packet available
+            // (this lets us immediately read more without waiting for an interrupt)
+            fifoCount -= packetSize;
+
+            break;
+        }
     }
 }
 
@@ -139,16 +147,15 @@ void update_gyro(){
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
 float get_gyro(){
-    // display Euler angles in degrees
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetEuler(euler, &q);
-    // Serial.print("euler\t");
-    // Serial.print(euler[0] * 180/M_PI);
-    // Serial.print("\t");
-    // Serial.print(euler[1] * 180/M_PI);
-    // Serial.print("\t");
-    // Serial.println(euler[2] * 180/M_PI);
-    btSerial.println("Orientation: " + String(euler[1] * 180/M_PI));
+    update_gyro();
+    while(true){
+        mpu.dmpGetQuaternion(&q, fifoBuffer);
+        mpu.dmpGetEuler(euler, &q);
 
+        if(!isnan(euler[1]))
+            break;
+        update_gyro();
+    }
+    btSerial.println("Orientation: " + String(euler[1] * 180/M_PI));
     return euler[1] * 180/M_PI;
 }

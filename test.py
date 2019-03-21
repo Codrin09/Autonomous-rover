@@ -1,4 +1,6 @@
 import datetime
+import math
+import pprint
 def ana(y):
     global x
     x *= 2
@@ -13,17 +15,6 @@ if __name__ == "__main__":
     ana(y)
     print(y)
 
-    z = []
-    print(datetime.datetime.now())
-    for angle in range(360):
-        for distance in range(2, 501):
-            a = 100 * 6
-            b = 123123 * 123
-            if 1 == 1:
-                if 1 == 4:
-                    pass
-            pass
-            z.append(distance)
-
-    print(datetime.datetime.now())
-    
+    rotation = math.degrees(math.atan2(250, 0))
+    baseTh = 180
+    print(rotation - baseTh)

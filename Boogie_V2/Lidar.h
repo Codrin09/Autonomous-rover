@@ -7,7 +7,7 @@ RPLidar lidar;
                         // This pin should connected with the RPLIDAR's MOTOCTRL signal
 volatile unsigned long scanStartTime;
 
-bool check_lidar(bool stopping){
+bool check_lidar(bool stopping, bool moving){
   if (IS_OK(lidar.waitPoint())) {
     float distance = lidar.getCurrentPoint().distance; //distance value in mm unit
     float angle    = lidar.getCurrentPoint().angle; //anglue value in degree
@@ -15,8 +15,10 @@ bool check_lidar(bool stopping){
     byte  quality  = lidar.getCurrentPoint().quality; //quality of the current measurement
 
     if(distance < 100){
-      stopping = true
+      stopping = true;
     }
+    if(moving)
+      return true;
 
     // read for 500ms
     if(millis() - scanStartTime < 500){ 

@@ -115,29 +115,123 @@ void loop(){
   check_bt();
 }
 
-
 void check_bt(){
-  if(btSerial.available() > 0){
+  while(btSerial.available() > 0){
     Serial.println("Incomming data on BT");
 
     String incomingData = btSerial.readString();
-    Serial.println(incomingData);
 
-    float old_th = 0;
-    bool stopping = false;
+    //Check for lost bytes
+    if(!valid_message(incomingData))
+      continue;
+    incomingData.remove(incomingData.length() - 1);
 
-    switch(incomingData.toInt()){
+    run_boogie(incomingData);
+    update_gyro();
+    //debug(incomingData);
+  }
+}
+
+bool valid_message(String message){
+  int x = 0;
+    for(int i = 0; i < message.length(); i++){
+      x = x ^ message[i];
+    }
+    if(x != 0){
+      btSerial.println("Send again");
+      return false;
+    }
+    
+    btSerial.println("Success");
+    return true;
+}
+
+void message_to_cmd(String incomingData, String *cmd){    
+  incomingData += " ";
+  char charData[incomingData.length()];
+  incomingData.toCharArray(charData, incomingData.length());
+
+  char* token = strtok(charData, " ");
+  int index = 0;
+  while(token != 0){
+    cmd[index++] = token;
+    token = strtok(0, " ");
+  }
+
+  free(token);
+}
+
+bool execute_cmd(String *cmd, String* output){
+  bool stopping = false;
+  switch((int) cmd[0][0]){
+    //rotate
+    case (int)'r':
+      rotate(cmd[1].toFloat(), cmd[2].toInt());
+      *output = "Finish rotate";
+      break;
+
+    //move
+    case (int)'m':
+
+      if(!power_by_PID(cmd[1].toInt())){
+        *output = "Distance:" + String(get_travel_distance()) + ":0";
+        return false;
+      }
+      *output = "Distance : " + String(get_travel_distance())+ ": 1";
+      break;
+
+    //update landmarks
+    case (int)'l':
+      for(int i = 0 ; i < 3; i++){
+        scanStartTime = millis();
+        while(check_lidar(&stopping, false));
+        send_readings();
+      }
+      *output = "Finish mapping";
+      break;
+  }
+  return true;
+}
+
+
+void run_boogie(String incomingData){
+  Serial.println(incomingData);
+  String *cmd = new String[10];
+  String output;
+
+  if(incomingData.equals("start")){
+    Serial.println("starting");
+    //Initialise map
+    cmd[0] = "l";
+    execute_cmd(cmd, &output);
+
+    btSerial.println("Create new path");
+  }
+  else{
+    message_to_cmd(incomingData, cmd);
+    bool exec_result = execute_cmd(cmd, &output);
+    //!REMEMBER TO RESET MOTORS/TRAVEL DISTANCE
+    reset_motors();
+  }
+  btSerial.println(output);
+  free(cmd);
+}
+void debug(String incomingData){
+  float new_th, old_th = 0;
+  bool stopping = false;
+  bool running = true;
+  switch(incomingData.toInt()){
       case 1:
         btSerial.println("Powering motors controlled by PID");
         old_th = get_gyro();
         for(int i = 0 ; i < 3; i++){
           scanStartTime = millis();
-          while(check_lidar());
+          while(check_lidar(&stopping, false));
           send_readings();
         }
 
         oldMotorTime = micros();
-        while(power_by_PID(1000));
+        power_by_PID(1000);
         stopMotors();
 
         btSerial.println("Get position");
@@ -150,21 +244,19 @@ void check_bt(){
         }
 
         scanStartTime = millis();
-        while(check_lidar());
+        while(check_lidar(&stopping, false));
         send_readings();
         //!REMEMBER TO RESET TRAVEL DISTANCE
-        reset_travel_distance();
+        reset_motors();
 
-        do{
-          old_th -= get_gyro();
-          update_gyro();
-        }while(isnan(old_th));
+        new_th = get_gyro();
+
         btSerial.println("New orientation");
-        btSerial.println(old_th);
+        btSerial.println(old_th - new_th);
 
         for(int i = 0 ; i < 2; i++){
           scanStartTime = millis();
-          while(check_lidar());
+          while(check_lidar(&stopping, false));
           send_readings();
         }
         
@@ -177,7 +269,36 @@ void check_bt(){
         break;
       case 3:
         btSerial.println("Turn 45 degrees anti clockwise");
+        for(int i = 0 ; i < 3; i++){
+          scanStartTime = millis();
+          while(check_lidar(&stopping, false));
+          send_readings();
+        }
+
         rotate(45, 1);
+
+        btSerial.println("Rotate");
+        btSerial.println("Get position");
+        while(true){
+          if(btSerial.available() > 0){
+            String input = btSerial.readString();
+            if(input.toInt() == 1)
+              break;
+          }
+        }
+
+        scanStartTime = millis();
+        while(check_lidar(&stopping, false));
+        send_readings();
+        //!REMEMBER TO RESET TRAVEL DISTANCE
+        reset_motors();
+
+        for(int i = 0 ; i < 2; i++){
+          scanStartTime = millis();
+          while(check_lidar(&stopping, false));
+          send_readings();
+        }
+
         break;
       case 4:
         btSerial.println("Turn 90 degrees clockwise");
@@ -193,17 +314,19 @@ void check_bt(){
         break;
       case 7:
         btSerial.println("Testing");
-        Serial.println(get_travel_distance());
+        // btSerial.println("Calculate path");
+
         while(true){
           if(btSerial.available()){
             String testData = btSerial.readString();
-            btSerial.println(testData);
+
             if(testData == "exit"){
               break;
             }
           }
         }
-        btSerial.println("breaked");
+        btSerial.println("Breaked");
+        break;
       case 8:
         btSerial.println("Start scanning and mapping");
 
@@ -211,7 +334,7 @@ void check_bt(){
         while(running){
           // update_gyro();
           scanStartTime = millis();
-          while(check_lidar());
+          while(check_lidar(&stopping, false));
           send_readings();
           if(btSerial.available() > 0){
             btSerial.readString();
@@ -226,20 +349,32 @@ void check_bt(){
         break;
     }
     reset_motors();
-  }
-  update_gyro();
+}
+
+void travel(){
+
 }
 
 bool power_by_PID(int dist){
+  //Take into account the time for breaking
+  dist *= 0.66;
+
   for(int i = 0; i < noOfMotors; i++){
     Setpoint[i] = desiredSpeed - speedScalar[i];
   }
+  bool stopping = false;
+  while(true){
+    update_speed();
+    check_lidar(&stopping, true);
+    if(stopping){
+      return false;
+    }
 
-  update_speed();
-
-  if(get_travel_distance() > dist && dist != 0)
-    return false;
-  return true;
+    if(get_travel_distance() > dist && dist != 0){
+      stopMotors();
+      return true;
+    }
+  } 
 }
 
 float update_speed(){
@@ -316,11 +451,6 @@ float get_travel_distance(){
   return dist / noOfMotors;
 }
 
-void reset_travel_distance(){
-  for(int i = 0; i < noOfMotors; i++)
-    motor_distance[i] = 0;
-}
-
 void power_off_motors(){
   btSerial.println("Powering off motors");
   for(int i = 0; i < noOfMotors; i++){
@@ -329,15 +459,23 @@ void power_off_motors(){
 }
 
 void reset_motors(){
+  btSerial.println("Motors reset");
   for(int i = 0; i < noOfMotors; i++){
     motor_distance[i] = 0;
     impulses[i] = 0;
   }
 }
-
+float absolute(float value){
+  if(value < 0)
+    return -value;
+  else
+    return value;
+}
 void rotate(int deg, int anti_clock){
+  if(deg == 0)
+    return;
   //impulses for 90 deg rotation
-  const int quarterCircle = 472.5;
+  const int quarterCircle = 480;
 
   int start_reverse;
   if(anti_clock == 1){
@@ -349,24 +487,26 @@ void rotate(int deg, int anti_clock){
   digitalWrite(motorControl[start_reverse], HIGH);
   digitalWrite(motorControl[start_reverse + 4], LOW);
 
-  float percentage = deg * 1.0 / 90;
+  int val = quarterCircle * (deg * 1.0 / 90);
 
   for(int i = 0; i < noOfMotors; i++){
     analogWrite(motorControl[2 * i],255);
   }
-  
 
-  int val = quarterCircle * percentage;
+  bool turning = true;
+  while(turning){
+    for(int i = 0 ; i < noOfMotors; i++)
+      if(impulses[i] >= val){
+        turning = false;
+        break;
+      }
+  }
 
-  while(impulses[0] < val || impulses[1] < val || impulses[2] < val || impulses[3] < val);
-
+  stopMotors();
   digitalWrite(motorControl[start_reverse], LOW);
   digitalWrite(motorControl[start_reverse + 4], HIGH);
-
-  power_off_motors();
-  reset_travel_distance();
-}
-
+  reset_motors();
+} 
 bool print_encoder_distances(){
   if(millis() - lastPrintTime > 1000){
     float sum = 0;
