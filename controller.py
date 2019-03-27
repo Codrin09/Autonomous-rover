@@ -9,6 +9,7 @@ import numpy as np
 import datetime
 import lee
 import math
+from debug import *
 
 """Opening of the serial port"""
 try:
@@ -19,16 +20,20 @@ except:
     print('Please check the port')
     sys.exit(0)
 
-def main():
-    print("1 - Powering motors controlled by PID\n2 - Powering motors at maximum speed without PID")
-    print("3 - Turn 45 degrees anti clockwise\n4 - Turn 90 degrees clockwise")
-    print("5 - Turn 45 degrees clockwise\n6 - Turn 90 degrees clockwise")
-    print("7 - Testing")
-    print("8 - Start scanning and mapping")
+#Call main with any parameter for debug mode
+def main(debug = None):
+
+    if debug:
+        debug_controls()  
+    else:
+        dest = input("Give distance from original robot pose (on X and Y axis): ")  
+        xy = dest.split(" ")
+        xDest = int(xy[0])
+        yDest = int(xy[1])
+        print("Send \"start\" to begin")
 
     plotter.init_variables(arduino)   
     plotter.init_map(arduino)
-    last_line = None
     path = []
 
     plt.ion()
@@ -43,24 +48,34 @@ def main():
                 print('eof')
                 exit(0)
         else:
+            #! Use decode to change bytes object to string
             message_received = str(arduino.readline()[:-2])[2:-1]
             if message_received:
                 print(message_received)
-                #!debug(messsage_received)
+
                 if message_received == "Create new path":
                     print("Creating new path")
-                    path = lee.motion_planning(plotter.baseX, plotter.baseY, 1050, 1050, plotter.matrix)
+                    clean_noise(plotter.matrix, plotter.baseX, plotter.baseY)
+                    path = lee.motion_planning(plotter.baseX, plotter.baseY, plotter.baseX + xDest, plotter.baseY + yDest, plotter.matrix)
                     print(path)
                 elif message_received == "Sending lidar readings":
                     plotter.update_map(0)
                     plt.draw()
                     plt.pause(0.001)
+            #If robot didn't complete path do next move
             elif len(path) > 0:
+                #Get new intermediate destination
                 nextX, nextY = path.pop(0)
 
-                rotation_angle = round(math.degrees(math.atan2(nextY - plotter.baseY, nextX - plotter.baseX))) - plotter.baseTh
+                #Calculate rotation angle for robot
+                rotation_angle = round(math.degrees(math.atan2(nextX - plotter.baseX, nextY - plotter.baseY))) - plotter.baseTh
+                if rotation_angle > 180:
+                    rotation_angle -= 360
+                elif rotation_angle < -180:
+                    rotation_angle += 360
+                
                 cmd = "r " + str(abs(rotation_angle))
-                cmd += " 0" if rotation_angle > 0 else " 1"
+                cmd += " false" if rotation_angle > 0 else " true"
                 print("New command:",cmd)
                 send_msg(cmd)
 
@@ -68,25 +83,48 @@ def main():
                     pass
                 plotter.baseTh += rotation_angle
                 
+                #Calculate distance between current location and new destination and send it to robot
                 distance = round(plotter.points_distance(plotter.baseX, plotter.baseY, nextX, nextY) * 4) 
                 cmd = "m " + str(distance)
                 print("New command:",cmd)
                 send_msg(cmd)
 
+                #Wait for response from robot with actual traveled distance
                 finish_action = ''
                 while not finish_action.startswith("Distance"):
                     finish_action = str(arduino.readline()[:-2])[2:-1]
-
-                print("Finish action:", finish_action)
+                    if finish_action:
+                        print(finish_action)
 
                 split = finish_action.split(":")
                 print(split)
-                send_msg('l')
+                
+                #Get new orientation from the gyro
+                new_orientation = ''
+                while not new_orientation.startswith("Orientation"):
+                    new_orientation = str(arduino.readline()[:-2])[2:-1]
+                new_orientation = new_orientation.split(":")
+                delta_th = round(float(new_orientation[1]))
+                plotter.baseTh += delta_th
+                print("New orientation delta", delta_th)
+
+                #Get new observations of landmarks and use them to aproximate new position
+                send_msg("l 1")
+                while str(arduino.readline()[:-2])[2:-1] != 'Sending lidar readings':
+                    pass
                 plotter.baseX, plotter.baseY, plotter.baseTh = plotter.get_position(float(split[1]) / 4)
                 print("New position", plotter.baseX, plotter.baseY, plotter.baseTh)
 
-                send_msg('l')
+                #Update the map with new readings
+                send_msg("l 3")
 
+#Clean noise from lidar around robot(we know for certain there is no obstacle where the robot lies)
+def clean_noise(matrix, baseX, baseY):
+    for i in range(-31, 32):
+        for j in range(-29, 30): 
+            matrix[baseX+i][baseY+j] = 0
+
+#Deal with loss of bytes and retry until message was properly sent
 def send_msg(line):
     line = add_checksum(line)
     response = None
@@ -94,6 +132,7 @@ def send_msg(line):
         arduino.write(line.encode())
         response = str(arduino.readline()[:-2])[2:-1]
 
+#Xor checksum for message
 def add_checksum(line):
     xor = 0
     for c in line:
@@ -102,46 +141,6 @@ def add_checksum(line):
 
     return line
 
-def debug(message_received):
-    # print(re.sub(r'[^\w]', ' ', str(message_received)))
-    if message_received == b'Sending lidar readings\r\n':
-        print("Received ladar readings")
-
-        plotter.update_map(0)
-        plt.draw()
-        plt.pause(0.001)
-    elif message_received == b'Get position\r\n':
-        arduino.write(input("Press 1 after position moved ").encode())
-
-        while arduino.readline() != b'Sending lidar readings\r\n':
-            pass
-        print("Getting current position")
-        print(datetime.datetime.now())
-        (newX, newY, newTh) = plotter.get_position(1)
-        plotter.baseX = newX
-        plotter.baseY = newY
-        plotter.baseTh = newTh
-
-        print("Done getting position")
-        print(datetime.datetime.now())
-        # print(newX, newY)
-    elif message_received == b'New orientation\r\n':
-        message_received = str(arduino.readline())[:-3].replace("\\r", "")
-        print(message_received)
-        print("New orientation received with delta", float(message_received[2:]))
-        plotter.baseTh +=  round(float(message_received[2:]))
-    elif message_received == b'Create new path\r\n':
-        print("Path planning")
-        path = lee.motion_planning(plotter.baseX, plotter.baseY, 1500, 1500, plotter.matrix)
-        print(path)
-    elif message_received == b'Rotate\r\n':
-        print("Received rotation")
-        #! clockwise/anti clock-ws: +/-
-        plotter.baseTh -= 45
-    elif message_received == b'Send again\r\n':
-        arduino.write(last_line.encode())
-    else:
-        print(message_received)
 def signal_handler(sig, frame):
     print('Shutting down controller')
     arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob

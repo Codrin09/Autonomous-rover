@@ -1,3 +1,5 @@
+//Lidar control functions
+
 bool wasSet[360];
 unsigned short lidar_data[360];
 float travel_distance;
@@ -53,12 +55,10 @@ bool check_lidar(bool stopping, bool moving){
 void send_readings(){
   btSerial.println("Sending lidar readings");
 
-  int errors = 0;
   for(int i = 0 ; i < 360; i++){
     // Serial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
     btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
     if(!wasSet[i])
-      errors++;
 
     wasSet[i] = false;
     lidar_data[i] = 0;

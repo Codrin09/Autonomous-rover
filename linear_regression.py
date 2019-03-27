@@ -16,12 +16,45 @@ def linear_fit(x, y):
         pass
     return k, m
 
+#Use newly created edges found using linear regression
+def linear_reg_draw(cluster, baseTh):
+    oldVal = 0
+    xCoords = []
+    yCoords = []
+    startX = startY = 0
+    for angle in range(360):
+        real_angle = (angle + baseTh) % 360
+        if cluster[real_angle] != 0:
+            newX, newY = new_points[index]
 
+            if oldVal == 0:
+                oldVal = cluster[real_angle]
+                startX, startY = newX, newY
+            elif oldVal != cluster[real_angle]:
+                #Take only first and last points that define an edge and draw all point between them 
+                # draw_line(startX, startY, lastX, lastY, "create", cluster[real_angle])
 
-if __name__ == "__main__":
-    x = [1,2,3,4,6,7]
-    y = [5,4,3,2,-2,-1]
-    a , b = linear_fit(x, y)
+                #Or use linear regression to create a line that fits points assigned to edge to draw
+                k, m = linear_fit(xCoords, yCoords)
+                for x in xCoords:
+                    y = round(k * x + m)
+                    edit_point(x, y, "create", cluster[real_angle])
+                xCoords = []
+                yCoords = []                
+                startX, startY = newX, newY
+                oldVal = cluster[real_angle]
+            elif real_angle == 359:
+                #Take only first and last points that define an edge and draw all point between them 
+                # draw_line(startX, startY, newX, newY, "create", cluster[real_angle])
 
-    sampleY = a * 3 + b
-    print(sampleY)
+                #Or use linear regression to create a line that fits points assigned to edge to draw
+                k, m = linear_fit(xCoords, yCoords)
+                for x in xCoords:
+                    y = round(k * x + m)
+                    edit_point(x, y, "create", cluster[real_angle])
+
+            xCoords.append(newX)
+            yCoords.append(newY)
+
+            lastX, lastY = newX, newY
+            index += 1

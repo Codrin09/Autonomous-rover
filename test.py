@@ -15,6 +15,18 @@ if __name__ == "__main__":
     ana(y)
     print(y)
 
-    rotation = math.degrees(math.atan2(250, 0))
-    baseTh = 180
-    print(rotation - baseTh)
+    x1 = y1 = 1000
+    x2 = 1050
+    y2 = 950
+    rotation = math.degrees(math.atan2(x2 - x1, y2 - y1)) - 180
+
+    
+    print('Rotation', rotation)
+
+    baseTh = 0
+    if rotation > 180 or rotation < -180:
+        print("Sal")
+        print(rotation % 360)
+    else:
+        print("sal2")
+        print(rotation)

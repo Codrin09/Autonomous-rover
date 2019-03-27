@@ -10,13 +10,13 @@ from linear_regression import *
 import pprint
 import random
 
+#Initialise map
 def init_map(testing = None):
-    global distances, rawdata, wasSet, matrix, travelDistance, arduino, sin, cos
+    global distances, rawdata, wasSet, matrix, arduino, sin, cos
     """Initialising variables""" 
     distances = [0 for _ in range(360)]
     rawdata= [0 for _ in range(360)]
     wasSet = [0 for _ in range(360)]
-    travelDistance = 0
     sin = []
     cos = []
     for angle in range(360):
@@ -33,9 +33,12 @@ def init_map(testing = None):
         arduino.write(line.encode())
 
     return matrice,
+
+#Deal with lidar input from arduino
 def handle_scans():
-    global rawdata, wasSet, distances, travelDistance, arduino, baseTh, baseX, baseY
+    global rawdata, wasSet, distances, arduino, baseTh, baseX, baseY
     for angle in range(360):
+        #Calculate angle using curent orientation of the robot
         real_angle = (angle + baseTh) % 360
         rawdata[real_angle] = str(arduino.readline())[:-3].replace("\\r", "")
         # print(rawdata[angle])
@@ -48,22 +51,20 @@ def handle_scans():
             if new_set == 1:
                 distances[real_angle] = new_distance
             
-            travelDistance = new_travel_dist
             wasSet[real_angle] = new_set
 
         except Exception as e:
-            print(e)
+            print('hanlde_scans', e)
             print (rawdata[real_angle])
             
-    baseX -= round(math.cos(math.radians(baseTh)) * travelDistance / 4);
-    baseY -= round(math.sin(math.radians(baseTh)) * travelDistance / 4);
+    # baseX -= round(math.cos(math.radians(baseTh)) * travelDistance / 4);
+    # baseY -= round(math.sin(math.radians(baseTh)) * travelDistance / 4);
 
+#Update matrix map with current readings where distances read by ladar are scaled to 1/4
 def update_map(tag):
-    global distances, rawdata, wasSet, matrix, scans, baseX, baseY, baseTh, changed, travelDistance, arduino
+    global distances, rawdata, wasSet, matrix, baseX, baseY, baseTh, changed, arduino
     """Receiving data and storing it in a list"""
     print("reading")
-    scans += 1
-    # manual_move(scans)
 
     print(datetime.datetime.now())
     handle_scans()
@@ -85,23 +86,28 @@ def update_map(tag):
         if wasSet[real_angle] == 1:
             changed[real_angle] = 1
 
+            #Polar coordinates to cartesian coordinates
             deltaX = distances[real_angle] * math.sin(math.radians(real_angle)) / 4
             deltaY = distances[real_angle] * math.cos(math.radians(real_angle)) / 4
 
             pointX = baseX + round(deltaX)
             pointY = baseY + round(deltaY)
 
+            #Assign point it to an old edge or create a new one if it doesn't fit any
             k, m, clusterX, clusterY, cluster, cluster_ind, new_points = feature_extraction(k, m, clusterX, clusterY, pointX, pointY, real_angle, cluster, cluster_ind, new_points)
             count+=1
-            # edit_point(pointX, pointY, "create")
+
+            #Delete all points between current position of robot and observed point
             draw_line(baseX, baseY, pointX, pointY, "delete")
 
         #! Assuming we have no moving obstacles we don't need this else check for changed[angle] is 1
         elif changed[real_angle] == -1:
+            #If no obstacle found at this angle delete all points from robot location until the max distance achieved by radar(2m)
             changed[real_angle] = 0
+            
             #from 5 as 3*sqrt(2) ~ 4.2
-            #old 5 2001
             for distance in range(5, 2001):
+                #Polar coordinates to cartesian coordinates
                 deltaX = distance * math.sin(math.radians(real_angle)) / 4
                 deltaY = distance * math.cos(math.radians(real_angle)) / 4
 
@@ -114,75 +120,52 @@ def update_map(tag):
                     else:
                         break;
                 except Exception as e:
-                    print(e)
+                    print('update_map', e)
                     print("pointX, pointY: " + str(pointX) + " " + str(pointY))
 
     index = 0
-    oldVal = 0
-    startX = startY = 0
-    xCoords = []
-    yCoords = []
-    #!Try to use linear regression to map the start and end of the line instead of using first and last point from cluster 
+    #Draw new landmark points on the map inidividually or use linear_reg_draw() method
     for angle in range(360):
         real_angle = (angle + baseTh) % 360
         if cluster[real_angle] != 0:
             newX, newY = new_points[index]
-            # if oldVal == 0:
-            #     oldVal = cluster[real_angle]
-            #     startX, startY = newX, newY
-            # elif oldVal != cluster[real_angle]:
-            #     draw_line(startX, startY, lastX, lastY, "create", cluster[real_angle])
-            #     k, m = linear_fit(xCoords, yCoords)
-            #     for x in xCoords:
-            #         y = round(k * x + m)
-            #         # edit_point(x, y, "create", cluster[real_angle])
-            #     xCoords = []
-            #     yCoords = []                
-            #     startX, startY = newX, newY
-            #     oldVal = cluster[real_angle]
-            # elif real_angle == 359:
-            #     draw_line(startX, startY, newX, newY, "create", cluster[real_angle])
-            #     k, m = linear_fit(xCoords, yCoords)
-            #     for x in xCoords:
-            #         y = round(k * x + m)
-            #         # edit_point(x, y, "create", cluster[real_angle])
-            # xCoords.append(newX)
-            # yCoords.append(newY)
-
-            # print(i, ":", new_points[index], distances[i], cluster[i])
             edit_point(newX, newY, "create", cluster[real_angle])
-
-            lastX, lastY = newX, newY
             index += 1
 
+    #Number of values where lidar returned a value
     print("******* count: " + str(count))
     matrice.set_array(matrix)
 
     return matrice,
 
+#Check if a point is inside the matrix
 def valid_point(x, y):
     if x >= 0 and x <= 2000 and y >= 0 and y <= 2000:
         return True
     return False
 
+#Get current approximate position based on predicted future position by using traveled distance
 def get_position(distance):
     global wasSet, baseX, baseY, baseTh
     handle_scans()
 
-    x = baseX + round(math.sin(baseTh) * distance)
-    y = baseY + round(math.cos(baseTh) * distance)
+    x = baseX + round(math.sin(math.radians(baseTh)) * distance)
+    y = baseY + round(math.cos(math.radians(baseTh)) * distance)
 
-    print("Aproximate position is", x, y)
+    # x = baseX - round(math.cos(math.radians(baseTh)) * distance)
+    # y = baseY - round(math.sin(math.radians(baseTh)) * distance)
 
     left = -24
     right = 25
     maxMatches = 0
-    gX = gY = gTh = 0   
+    gX = gY = gTh = 0
 
+    #Get lidar readings of landmarks in the new position
     current_observations = get_observations(x, y)
     current_observations =  sorted(current_observations, key = lambda x: (x[0], x[1]))
     print("No of observations:",len(current_observations))
 
+    #Choose the point around our predicted location that fits best the new observations 
     for i in range(left, right, 2):
         for j in range(left, right, 2):
             if valid_point(x + i, y + j):
@@ -191,13 +174,6 @@ def get_position(distance):
                 if matches >  maxMatches:
                     maxMatches = matches
                     gX, gY, gTh = x+i, y+j, (baseTh + start_angle) % 360
-
-    z = simulate_observations(gX, gY)
-    z =  sorted(z, key = lambda x: (x[0], x[1]))
-    # print("SIMULATION")
-    # pprint.pprint(z)
-    # print("ACTUAL OBSERVATION")
-    # pprint.pprint(current_observations)
 
     print("Best match for position is",gX, gY, gTh, maxMatches)
     return (gX, gY, gTh)
@@ -217,28 +193,8 @@ def get_observations(x, y):
             if(valid_point(pointX, pointY)):
                 current_observations.append((pointX, pointY, real_angle))
     return current_observations
-         
-def simulate_observations(x, y):
-    global matrix, sin, cos, baseTh
-    z = []
-    for angle in range(360):
-        real_angle = (angle + baseTh) % 360
-        pointX = pointY = -1
-        for distance in range(2, 501):
-            deltaX = distance * sin[real_angle]
-            deltaY = distance * cos[real_angle]
 
-            pointX = x + round(deltaX)
-            pointY = y + round(deltaY)
-
-            if valid_point(pointX, pointY):
-                if matrix[pointX][pointY] == 0:
-                    continue
-                else:
-                    z.append((pointX, pointY, real_angle))
-            break
-    return z
-
+#Use simulated location to map observations to points and check how many landmarks they match
 def simulate_point(x, y):
     global baseTh, matrix, distances, sin, cos
     matches = 0
@@ -254,6 +210,8 @@ def simulate_point(x, y):
             if valid_point(pointX, pointY) and matrix[pointX][pointY] > 0:
                 matches += 1
     return matches
+
+#Edit matrix method to delete/create a new point and add a frame to it
 def edit_point(x, y, action, value = None):
     global matrix
     left = -5
@@ -263,8 +221,10 @@ def edit_point(x, y, action, value = None):
         return
 
     if action == "create":
+        #Assign to action the edge number if needed
         # action = value
-        action = 14
+
+        action = 7
         if matrix[x][y] != 0:
             return
     else:
@@ -278,9 +238,10 @@ def edit_point(x, y, action, value = None):
                 try:
                     matrix[x+i][y+j] = action
                 except Exception as e:
-                    print(e)
+                    print('edit_point', e)
                     print ("Edit point: " + str(x+i) + " " + str(y+j))
 
+#Draw a line between two points
 def draw_line(startX, startY, endX, endY, action, value = None):
     minX, maxX = min(startX, endX), max(startX, endX)
     minY, maxY = min(startY, endY), max(startY, endY)
@@ -296,6 +257,7 @@ def draw_line(startX, startY, endX, endY, action, value = None):
         for x in range(minX + padding_min, maxX - padding_max):
             edit_point(x, startY, action, value)
     else:
+        #Calculate line equation if points are not on same axis and draw between them 
         a = startY - endY
         b = endX - startX
         c = startX * (endY - startY) + startY * (startX - endX)
@@ -308,12 +270,15 @@ def draw_line(startX, startY, endX, endY, action, value = None):
                 x = int((-1) * (b * y + c) / a)
                 edit_point(x, y, action, value)
     
+#Map nearby points to an edge
 def feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster, cluster_ind, new_points):
+    #Add curent point to cluster X/Y
     clusterX.append(pointX)
     clusterY.append(pointY)
     cluster[angle] = cluster_ind
 
     if len(clusterX) > 1:
+        #Get the previously added point
         oldX, oldY = new_points[len(new_points) - 1]
         newK, newM = linear_fit(clusterX, clusterY)
 
@@ -322,6 +287,7 @@ def feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster,
         expectedY = k * pointX + m
         dist = points_distance(pointX, pointY, oldX, oldY)
 
+        #If distance between current point and previously added point is less than 2 cm and point matches linear regression function add to edge
         if (dist < 40 and abs(pointY - expectedY) < 20) or dist == 0:
             k, m = newK, newM
         else:
@@ -331,12 +297,13 @@ def feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster,
             clusterX = [pointX]
             clusterY = [pointY]
             k = m = -1
-            
+    
+    #If last point and first point match unite first edge with last edge
     if angle == 359 and cluster[0] != 0:
         firstX, firstY = new_points[0]
         expectedY = k * firstX + m
         dist = points_distance(pointX, pointY, firstX, firstY)
-        if (dist < 40 and abs(pointY - expectedY) < 40) or dist == 0:
+        if (dist < 40 and abs(pointY - expectedY) < 20) or dist == 0:
             oldCluster = cluster[angle]
             for i in reversed(range(len(cluster))):
                 if cluster[i] == oldCluster:
@@ -348,22 +315,7 @@ def feature_extraction(k, m, clusterX, clusterY, pointX, pointY, angle, cluster,
 
     return k, m, clusterX, clusterY, cluster, cluster_ind, new_points
 
-def manual_move(scans):
-    global baseY
-    if (scans/4)%2 == 1:
-        arduino.write('2'.encode());
-        print("Waiting for user input")
-        line = sys.stdin.readline()
-        arduino.write('1'.encode())
-        baseY = 587
-
-    if (scans/4)%2 == 0:
-        arduino.write('2'.encode());
-        print("Waiting for user input")
-        line = sys.stdin.readline()
-        arduino.write('1'.encode())
-        baseY = 500
-
+#Distance between two points 
 def points_distance(x1, y1, x2, y2):
     return math.sqrt(math.pow(x1 - x2, 2) + math.pow(y1 - y2, 2))
 
@@ -373,17 +325,23 @@ def signal_handler(sig, frame):
     arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob
     sys.exit(0) 
 
+#Initialise plotter variables
 def init_variables(btConnection = None):
-    global matrix, changed, baseX, baseY, baseTh, matrix, scans, cmap, matrice, fig, ax, arduino
+    global matrix, changed, baseX, baseY, baseTh, matrix, cmap, matrice, fig, ax, arduino
+    
+    #Matrix to plot
     matrix = [[0 for col in range(2001)] for row in range(2001)]
     changed = [0 for i in range(360)]
 
     if btConnection != None:
         arduino = btConnection
+
+    #Base in the centre of the map
     baseX = baseY = 1000
-    baseTh = 0
+    baseTh = 180
+
+    #Max value added to robot location
     matrix[baseX][baseY] = 15
-    scans = 0
 
     cmap = ListedColormap(['k', 'w', 'r'])
 

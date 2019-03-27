@@ -16,7 +16,6 @@ def motion_planning(startX, startY, goalX, goalY, matrix):
     padding_min = 10
     
     leeMatrix = [[0 for col in range(2001)] for row in range(2001)]
-    matrix = [[0 for col in range(2001)] for row in range(2001)]
 
     stop = False
     print(datetime.datetime.now())
@@ -59,7 +58,12 @@ def motion_planning(startX, startY, goalX, goalY, matrix):
                                 crashed = True
                                 break;
                     if not crashed and (destX != startX or destY != startY) and (leeMatrix[destX][destY] == 0 or (leeMatrix[currentX][currentY] + 1) < leeMatrix[destX][destY]):
-                        leeMatrix[destX][destY] = leeMatrix[currentX][currentY] + 1
+                        dist = 0
+                        if i * j == -1 or i * j == 1:
+                            dist = 1.41
+                        else:
+                            dist = 1
+                        leeMatrix[destX][destY] = leeMatrix[currentX][currentY] + dist
                         if destX == goalX and destY == goalY:
                             stop = True
                         queue.append((destX, destY))
@@ -93,4 +97,6 @@ def retrieve_path(leeMatrix, startX, startY, goalX, goalY):
     return path
 
 if __name__ == "__main__":
-    motion_planning(1000,1000, 1750,1750)
+    matrix = [[0 for col in range(2001)] for row in range(2001)]
+    path = motion_planning(1000,1000, 900, 1000, matrix)
+    print(path)
