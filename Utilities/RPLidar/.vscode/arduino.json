@@ -1,0 +1,7 @@
+{
+    "sketch": "../Boogie_V2/Boogie_V2.ino",
+    "port": "/dev/cu.usbmodem14201",
+    "board": "arduino:avr:mega",
+    "configuration": "cpu=atmega2560",
+    "programmer": "AVRISP mkII"
+}
