@@ -36,10 +36,10 @@ def init_map(testing = None):
 
 #Deal with lidar input from arduino
 def handle_scans():
-    global rawdata, wasSet, distances, arduino, baseTh, baseX, baseY
+    global rawdata, wasSet, distances, arduino, baseTh, baseX, baseY, mapTh
     for angle in range(360):
         #Calculate angle using curent orientation of the robot
-        real_angle = (angle + baseTh) % 360
+        real_angle = (angle + mapTh) % 360
         rawdata[real_angle] = str(arduino.readline())[:-3].replace("\\r", "")
         # print(rawdata[angle])
         split = rawdata[real_angle].split(":")
@@ -62,7 +62,7 @@ def handle_scans():
 
 #Update matrix map with current readings where distances read by ladar are scaled to 1/4
 def update_map(tag):
-    global distances, rawdata, wasSet, matrix, baseX, baseY, baseTh, changed, arduino
+    global distances, rawdata, wasSet, matrix, baseX, baseY, baseTh, changed, arduino, mapTh
     """Receiving data and storing it in a list"""
     print("reading")
 
@@ -81,7 +81,7 @@ def update_map(tag):
     print("finish read")
 
     for angle in range(360):
-        real_angle = (angle + baseTh) % 360
+        real_angle = (angle + mapTh) % 360
         
         if wasSet[real_angle] == 1:
             changed[real_angle] = 1
@@ -126,7 +126,7 @@ def update_map(tag):
     index = 0
     #Draw new landmark points on the map inidividually or use linear_reg_draw() method
     for angle in range(360):
-        real_angle = (angle + baseTh) % 360
+        real_angle = (angle + mapTh) % 360
         if cluster[real_angle] != 0:
             newX, newY = new_points[index]
             edit_point(newX, newY, "create", cluster[real_angle])
@@ -149,8 +149,8 @@ def get_position(distance):
     global wasSet, baseX, baseY, baseTh
     handle_scans()
 
-    x = baseX + round(math.sin(math.radians(baseTh)) * distance)
-    y = baseY + round(math.cos(math.radians(baseTh)) * distance)
+    x = baseX + round(math.cos(math.radians(baseTh)) * distance)
+    y = baseY + round(math.sin(math.radians(baseTh)) * distance)
 
     # x = baseX - round(math.cos(math.radians(baseTh)) * distance)
     # y = baseY - round(math.sin(math.radians(baseTh)) * distance)
@@ -175,14 +175,14 @@ def get_position(distance):
                     maxMatches = matches
                     gX, gY, gTh = x+i, y+j, (baseTh + start_angle) % 360
 
-    print("Best match for position is",gX, gY, gTh, maxMatches)
+    print("Best match for position is",gX, gY, gTh, "with number of matches", maxMatches)
     return (gX, gY, gTh)
 
 def get_observations(x, y):
-    global distances, sin, cos, baseTh
+    global distances, sin, cos, baseTh, mapTh
     current_observations = []
     for angle in range(360):
-        real_angle = (angle + baseTh) % 360
+        real_angle = (angle + mapTh) % 360
         if wasSet[real_angle] == 1:
             deltaX = distances[real_angle] * sin[real_angle] / 4
             deltaY = distances[real_angle] * cos[real_angle] / 4
@@ -196,10 +196,10 @@ def get_observations(x, y):
 
 #Use simulated location to map observations to points and check how many landmarks they match
 def simulate_point(x, y):
-    global baseTh, matrix, distances, sin, cos
+    global baseTh, matrix, distances, sin, cos, mapTh
     matches = 0
     for angle in range(360):
-        real_angle = (angle + baseTh) % 360
+        real_angle = (angle + mapTh) % 360
         if wasSet[real_angle] == 1:
             deltaX = distances[real_angle] * sin[real_angle] / 4
             deltaY = distances[real_angle] * cos[real_angle] / 4
@@ -327,7 +327,7 @@ def signal_handler(sig, frame):
 
 #Initialise plotter variables
 def init_variables(btConnection = None):
-    global matrix, changed, baseX, baseY, baseTh, matrix, cmap, matrice, fig, ax, arduino
+    global matrix, changed, baseX, baseY, baseTh, matrix, cmap, matrice, fig, ax, arduino, mapTh
     
     #Matrix to plot
     matrix = [[0 for col in range(2001)] for row in range(2001)]
@@ -339,6 +339,7 @@ def init_variables(btConnection = None):
     #Base in the centre of the map
     baseX = baseY = 1000
     baseTh = 180
+    mapTh = 180
 
     #Max value added to robot location
     matrix[baseX][baseY] = 15

@@ -14,7 +14,7 @@ from debug import *
 """Opening of the serial port"""
 try:
     # arduino = serial.Serial("/dev/tty.usbmodem14101", 115200)
-    arduino = serial.Serial("/dev/tty.NICE-BT-DevB", 115200, timeout = 2)
+    arduino = serial.Serial("/dev/tty.HC-05-DevB", 115200, timeout = 2)
     arduino.flushInput() #This gives the bluetooth a little kick
 except:
     print('Please check the port')
@@ -22,7 +22,8 @@ except:
 
 #Call main with any parameter for debug mode
 def main(debug = None):
-
+    started = 0
+    
     if debug:
         debug_controls()  
     else:
@@ -43,6 +44,10 @@ def main(debug = None):
         while sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
             line = sys.stdin.readline()[:-1]
             if line:
+                if line.startswith("r"):
+                    val = line.split(' ')[1]
+                    plotter.baseTh -= int(val)
+                    plotter.mapTh += int(val)
                 send_msg(line)
             else: # an empty line means stdin has been closed
                 print('eof')
@@ -64,24 +69,30 @@ def main(debug = None):
                     plt.pause(0.001)
             #If robot didn't complete path do next move
             elif len(path) > 0:
+                started = 1
                 #Get new intermediate destination
                 nextX, nextY = path.pop(0)
+                if len(path) > 0:
+                    nextX, nextY = path.pop(0)
 
                 #Calculate rotation angle for robot
-                rotation_angle = round(math.degrees(math.atan2(nextX - plotter.baseX, nextY - plotter.baseY))) - plotter.baseTh
+                rotation_angle = plotter.baseTh - round(math.degrees(math.atan2(nextY - plotter.baseY, nextX - plotter.baseX)))
                 if rotation_angle > 180:
                     rotation_angle -= 360
-                elif rotation_angle < -180:
+                elif rotation_angle <= -180:
                     rotation_angle += 360
                 
                 cmd = "r " + str(abs(rotation_angle))
-                cmd += " false" if rotation_angle > 0 else " true"
+                cmd += " f" if rotation_angle > 0 else " t"
                 print("New command:",cmd)
-                send_msg(cmd)
-
-                while str(arduino.readline()[:-2])[2:-1] != "Finish rotate":
-                    pass
-                plotter.baseTh += rotation_angle
+                if rotation_angle != 0:
+                    send_msg(cmd)
+                    while str(arduino.readline()[:-2])[2:-1] != "Finish rotate":
+                        pass
+                
+                plotter.baseTh -= rotation_angle
+                plotter.mapTh += rotation_angle
+                print("Current rotation", plotter.baseTh)
                 
                 #Calculate distance between current location and new destination and send it to robot
                 distance = round(plotter.points_distance(plotter.baseX, plotter.baseY, nextX, nextY) * 4) 
@@ -101,11 +112,12 @@ def main(debug = None):
                 
                 #Get new orientation from the gyro
                 new_orientation = ''
-                while not new_orientation.startswith("Orientation"):
+                while not new_orientation.startswith("Orientation"):    
                     new_orientation = str(arduino.readline()[:-2])[2:-1]
                 new_orientation = new_orientation.split(":")
                 delta_th = round(float(new_orientation[1]))
                 plotter.baseTh += delta_th
+                plotter.mapTh -= delta_th
                 print("New orientation delta", delta_th)
 
                 #Get new observations of landmarks and use them to aproximate new position
@@ -116,8 +128,11 @@ def main(debug = None):
                 print("New position", plotter.baseX, plotter.baseY, plotter.baseTh)
 
                 #Update the map with new readings
-                send_msg("l 3")
-
+                send_msg("l 1")
+            elif started == 1:
+                started = 0
+                print("Target achieved")
+                send_msg("q")
 #Clean noise from lidar around robot(we know for certain there is no obstacle where the robot lies)
 def clean_noise(matrix, baseX, baseY):
     for i in range(-31, 32):
@@ -143,6 +158,7 @@ def add_checksum(line):
 
 def signal_handler(sig, frame):
     print('Shutting down controller')
+    send_msg("q")
     arduino.close() #Otherwise the connection will remain open until a timeout which ties up the /dev/thingamabob
     sys.exit(0)
 

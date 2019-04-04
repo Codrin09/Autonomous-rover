@@ -93,7 +93,7 @@ void setup_gyro() {
 
         // get expected DMP packet size for later comparison
         packetSize = mpu.dmpGetFIFOPacketSize();
-        btSerial.println("Gyroscope initialized");
+        Serial2.println("Gyroscope initialized");
     } else {
         // ERROR!
         // 1 = initial memory load failed
@@ -125,7 +125,7 @@ void update_gyro(){
             // reset so we can continue cleanly
             mpu.resetFIFO();
             // Serial.println(F("FIFO overflow!"));
-            // btSerial.println("FIFO overflow!");
+            // Serial2.println("FIFO overflow!");
 
         // otherwise, check for DMP data ready interrupt (this should happen frequently)
         } else if (mpuIntStatus & 0x01) {
@@ -156,6 +156,6 @@ float get_gyro(){
             break;
         update_gyro();
     }
-    // btSerial.println("Orientation: " + String(euler[1] * 180/M_PI));
+    // Serial2.println("Orientation: " + String(euler[1] * 180/M_PI));
     return euler[1] * 180/M_PI;
 }

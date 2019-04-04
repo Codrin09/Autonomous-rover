@@ -1,11 +1,10 @@
 #include <PID_v1.h>
 #include <RPLidar.h>
-#include <SoftwareSerial.h>
 
 #define RXd 10
 #define TXx 11
+#define resetPin 52
 
-SoftwareSerial btSerial(RXd, TXx); // RX, TX
 float get_travel_distance();
 
 #include "Gyro.h"
@@ -85,11 +84,15 @@ void setup(){
   Serial.begin(115200);
   Serial.println("start");
 
-  btSerial.begin(115200);
+  Serial2.begin(115200);
   //Flush all outdated messages
-  while(btSerial.available() > 0){
-    btSerial.read();
+  while(Serial2.available() > 0){
+    Serial2.read();
   }
+
+  digitalWrite(resetPin, HIGH);
+  delay(100);
+  pinMode(resetPin, OUTPUT);
 
   setEncoders();
   setMotorControl();
@@ -111,10 +114,10 @@ void loop(){
 }
 
 void check_bt(){
-  while(btSerial.available() > 0){
+  while(Serial2.available() > 0){
     Serial.println("Incomming data on BT");
 
-    String incomingData = btSerial.readString();
+    String incomingData = Serial2.readString();
 
     //Check for lost bytes
     if(!valid_message(incomingData))
@@ -133,11 +136,11 @@ bool valid_message(String message){
       x = x ^ message[i];
     }
     if(x != 0){
-      btSerial.println("Send again");
+      Serial2.println("Send again");
       return false;
     }
     
-    btSerial.println("Success");
+    Serial2.println("Success");
     return true;
 }
 
@@ -164,10 +167,11 @@ bool execute_cmd(String *cmd, String* output){
   switch((int) cmd[0][0]){
     //rotate
     case (int)'r':
-      if(cmd[2] == "true")
+      if(cmd[2].equals("t"))
         dir = 1;
       else 
         dir = 0;
+      Serial2.println(dir);
       rotate(cmd[1].toFloat(), dir);
       *output = "Finish rotate";
       break;
@@ -191,6 +195,11 @@ bool execute_cmd(String *cmd, String* output){
       }
       *output = "Finish mapping";
       break;
+    case (int)'q':
+      digitalWrite(resetPin, HIGH);
+      delay(100);
+      digitalWrite(resetPin, LOW);
+      break;
   }
   return true;
 }
@@ -209,7 +218,7 @@ void run_boogie(String incomingData){
     cmd[1] = "3";
     execute_cmd(cmd, &output);
 
-    btSerial.println("Create new path");
+    Serial2.println("Create new path");
   }
   else{
     message_to_cmd(incomingData, cmd);
@@ -222,10 +231,10 @@ void run_boogie(String incomingData){
     reset_motors();
   }
   //Send response back
-  btSerial.println(output);
+  Serial2.println(output);
   if(cmd[0]=="m"){
     // Serial.println("Orientation:" + String(old_th - get_gyro()));
-    btSerial.println("Orientation:" + String(old_th - get_gyro()));
+    Serial2.println("Orientation:" + String(old_th - get_gyro()));
   }
   free(cmd);
 }
@@ -239,14 +248,14 @@ float update_speed(){
     float total_spid = 0;
     float totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000000.0;
 
-    // btSerial.println(String(impulses[0]) + " "+ String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
-    // btSerial.println(newMotorTime - oldMotorTime);
+    // Serial2.println(String(impulses[0]) + " "+ String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
+    // Serial2.println(newMotorTime - oldMotorTime);
 
     //Approximate impulses per second from 100ms sample
     Input[0] = Input[2] = (impulses[0] + impulses[2]) * 1.0 / (2 * totalTime);
     Input[1] = Input[3] = (impulses[1] + impulses[3]) * 1.0 / (2 * totalTime);
 
-    // btSerial.println(String(Input[0]) + " "+ String(Input[1]));
+    // Serial2.println(String(Input[0]) + " "+ String(Input[1]));
     // print_encoder_distances();
 
     //Calculate wheel rotations per second
@@ -292,8 +301,8 @@ void power_no_PID(int dist, int PWM){
       }
     }
 
-    if(btSerial.available()){
-      btSerial.readString();
+    if(Serial2.available()){
+      Serial2.readString();
       moving = false;
     }
   }
@@ -306,12 +315,12 @@ float get_travel_distance(){
   for(int i = 0; i < noOfMotors; i++){
     dist += motor_distance[i];
   }
-  // btSerial.println((motor_distance[0] - motor_distance[1] + motor_distance[2] - motor_distance[3]));
+  // Serial2.println((motor_distance[0] - motor_distance[1] + motor_distance[2] - motor_distance[3]));
   return dist / noOfMotors;
 }
 
 void power_off_motors(){
-  btSerial.println("Powering off motors");
+  Serial2.println("Powering off motors");
   for(int i = 0; i < noOfMotors; i++){
     analogWrite(motorControl[2*i], 0);
   }
@@ -319,7 +328,7 @@ void power_off_motors(){
 
 //Reset motors after movement
 void reset_motors(){
-  btSerial.println("Motors reset");
+  Serial2.println("Motors reset");
   for(int i = 0; i < noOfMotors; i++){
     motor_distance[i] = 0;
     impulses[i] = 0;
@@ -384,7 +393,7 @@ bool print_encoder_distances(){
       outString += String(impulses[i]) + " ";
     }
     Serial.println(sum);
-    btSerial.println(outString);
+    Serial2.println(outString);
 
     lastPrintTime = millis();
     return true;
@@ -423,7 +432,7 @@ void debug(String incomingData){
   bool running = true;
   switch(incomingData.toInt()){
       case 1:
-        btSerial.println("Powering motors controlled by PID");
+        Serial2.println("Powering motors controlled by PID");
         old_th = get_gyro();
         for(int i = 0 ; i < 3; i++){
           scanStartTime = millis();
@@ -435,10 +444,10 @@ void debug(String incomingData){
         power_by_PID(1000);
         stopMotors();
 
-        btSerial.println("Get position");
+        Serial2.println("Get position");
         while(true){
-          if(btSerial.available() > 0){
-            String input = btSerial.readString();
+          if(Serial2.available() > 0){
+            String input = Serial2.readString();
             if(input.toInt() == 1)
               break;
           }
@@ -452,8 +461,8 @@ void debug(String incomingData){
 
         new_th = get_gyro();
 
-        btSerial.println("New orientation");
-        btSerial.println(old_th - new_th);
+        Serial2.println("New orientation");
+        Serial2.println(old_th - new_th);
 
         for(int i = 0 ; i < 2; i++){
           scanStartTime = millis();
@@ -461,15 +470,15 @@ void debug(String incomingData){
           send_readings();
         }
         
-        btSerial.println("Finish operation 1");
+        Serial2.println("Finish operation 1");
         break;
       case 2:
-        btSerial.println("Powering motors at maximum speed without PID");
+        Serial2.println("Powering motors at maximum speed without PID");
         power_no_PID(1000, 255);
 
         break;
       case 3:
-        btSerial.println("Turn 45 degrees anti clockwise");
+        Serial2.println("Turn 45 degrees anti clockwise");
         for(int i = 0 ; i < 3; i++){
           scanStartTime = millis();
           while(check_lidar(&stopping, false));
@@ -478,11 +487,11 @@ void debug(String incomingData){
 
         rotate(45, 1);
 
-        btSerial.println("Rotate");
-        btSerial.println("Get position");
+        Serial2.println("Rotate");
+        Serial2.println("Get position");
         while(true){
-          if(btSerial.available() > 0){
-            String input = btSerial.readString();
+          if(Serial2.available() > 0){
+            String input = Serial2.readString();
             if(input.toInt() == 1)
               break;
           }
@@ -502,34 +511,34 @@ void debug(String incomingData){
 
         break;
       case 4:
-        btSerial.println("Turn 90 degrees clockwise");
+        Serial2.println("Turn 90 degrees clockwise");
         rotate(90, 1);
         break;
       case 5:
-        btSerial.println("Turn 45 degrees clockwise");
+        Serial2.println("Turn 45 degrees clockwise");
         rotate(45, 0);
         break;
       case 6:
-        btSerial.println("Turn 90 degrees clockwise");
+        Serial2.println("Turn 90 degrees clockwise");
         rotate(90, 0);
         break;
       case 7:
-        btSerial.println("Testing");
-        // btSerial.println("Calculate path");
+        Serial2.println("Testing");
+        // Serial2.println("Calculate path");
 
         while(true){
-          if(btSerial.available()){
-            String testData = btSerial.readString();
+          if(Serial2.available()){
+            String testData = Serial2.readString();
 
             if(testData == "exit"){
               break;
             }
           }
         }
-        btSerial.println("Breaked");
+        Serial2.println("Breaked");
         break;
       case 8:
-        btSerial.println("Start scanning and mapping");
+        Serial2.println("Start scanning and mapping");
 
         running = true;
         while(running){
@@ -537,16 +546,16 @@ void debug(String incomingData){
           scanStartTime = millis();
           while(check_lidar(&stopping, false));
           send_readings();
-          if(btSerial.available() > 0){
-            btSerial.readString();
+          if(Serial2.available() > 0){
+            Serial2.readString();
             running = false;
           }
         }
-        btSerial.println("Stop scanning");
+        Serial2.println("Stop scanning");
 
         break;
       default:
-        btSerial.println("No valid command given");
+        Serial2.println("No valid command given");
         break;
     }
     reset_motors();

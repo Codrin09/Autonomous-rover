@@ -2,6 +2,7 @@ import datetime
 from plotter import valid_point
 #  Dimensions of rover 245 x 225
 def check_crash(x, y, matrix):
+    #Used -31 32, -29 30
     for i in range(-31, 32, 6):
         for j in range(-29, 30, 6):
             if valid_point(x+i, y+j) and matrix[x+i][y+j] == 0:

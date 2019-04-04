@@ -25,7 +25,7 @@ bool check_lidar(bool stopping, bool moving){
     // read for 500ms
     if(millis() - scanStartTime < 500){ 
       int aprox_angle = round(angle);
-      if(quality > 8 && distance < 2000){
+      if(quality > 8){
         wasSet[aprox_angle] = true;
         lidar_data[aprox_angle] = int(distance);
       }
@@ -53,11 +53,11 @@ bool check_lidar(bool stopping, bool moving){
 }
 
 void send_readings(){
-  btSerial.println("Sending lidar readings");
+  Serial2.println("Sending lidar readings");
 
   for(int i = 0 ; i < 360; i++){
     // Serial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
-    btSerial.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
+    Serial2.println(String(i) + " (" + String(wasSet[i]) + "): " + String(lidar_data[i]) + " : " + String(get_travel_distance()));
     if(!wasSet[i])
 
     wasSet[i] = false;
