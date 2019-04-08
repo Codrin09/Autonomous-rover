@@ -5,7 +5,7 @@ import serial
 """Opening of the serial port"""
 try:
     # arduino = serial.Serial("/dev/tty.usbmodem14101", 115200)
-    arduino = serial.Serial("/dev/tty.NICE-BT-DevB", 115200, timeout = 2)
+    arduino = serial.Serial("/dev/tty.HC-05-DevB", 115200, timeout = 2)
     arduino.flushInput() #This gives the bluetooth a little kick
 except:
     print('Please check the port')

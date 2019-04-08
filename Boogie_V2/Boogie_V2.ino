@@ -164,6 +164,7 @@ void message_to_cmd(String incomingData, String *cmd){
 bool execute_cmd(String *cmd, String* output){
   bool stopping = false;
   int dir = 0;
+  int rotation;
   switch((int) cmd[0][0]){
     //rotate
     case (int)'r':
@@ -171,9 +172,8 @@ bool execute_cmd(String *cmd, String* output){
         dir = 1;
       else 
         dir = 0;
-      Serial2.println(dir);
-      rotate(cmd[1].toFloat(), dir);
-      *output = "Finish rotate";
+      rotation = rotate(cmd[1].toFloat(), dir);
+      *output = "Finish rotate " + String(rotation);
       break;
 
     //move
@@ -344,11 +344,11 @@ float absolute(float value){
 }
 
 //Rotate robot by powering a set of motors in one direction and the others in the opposite direction
-void rotate(int deg, int anti_clock){
+int rotate(int deg, int anti_clock){
   if(deg == 0)
-    return;
+    return 0;
   //impulses for 90 deg rotation
-  const int quarterCircle = 480;
+  const int quarterCircle = 510;
 
   int start_reverse;
   if(anti_clock == 1){
@@ -361,24 +361,37 @@ void rotate(int deg, int anti_clock){
   digitalWrite(motorControl[start_reverse + 4], LOW);
 
   int val = quarterCircle * (deg * 1.0 / 90);
+  int gyro_old = get_gyro();
+  int gyro_turn = 0;
+  int gyro_new;
 
   for(int i = 0; i < noOfMotors; i++){
-    analogWrite(motorControl[2 * i],255);
+    analogWrite(motorControl[2 * i], 255);
   }
 
   bool turning = true;
   while(turning){
+    gyro_new = get_gyro();
+    if(absolute(gyro_new - gyro_old) < 10){
+      gyro_turn += absolute(gyro_new - gyro_old);
+    }
+    gyro_old = gyro_new;
     for(int i = 0 ; i < noOfMotors; i++)
       if(impulses[i] >= val){
         turning = false;
         break;
       }
   }
-
   stopMotors();
+
   digitalWrite(motorControl[start_reverse], LOW);
   digitalWrite(motorControl[start_reverse + 4], HIGH);
   reset_motors();
+
+  gyro_new = get_gyro();
+  gyro_turn += absolute(gyro_new - gyro_old);
+  // Serial2.println("Gyro turn " + String(gyro_turn));
+  return gyro_turn;
 } 
 
 bool print_encoder_distances(){

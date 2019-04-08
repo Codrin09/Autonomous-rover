@@ -39,7 +39,7 @@ def handle_scans():
     global rawdata, wasSet, distances, arduino, baseTh, baseX, baseY, mapTh
     for angle in range(360):
         #Calculate angle using curent orientation of the robot
-        real_angle = (angle + mapTh) % 360
+        real_angle = int((angle + mapTh) % 360)
         rawdata[real_angle] = str(arduino.readline())[:-3].replace("\\r", "")
         # print(rawdata[angle])
         split = rawdata[real_angle].split(":")
@@ -207,7 +207,7 @@ def simulate_point(x, y):
             pointX = x + round(deltaX)
             pointY = y + round(deltaY)
             
-            if valid_point(pointX, pointY) and matrix[pointX][pointY] > 0:
+            if valid_point(pointX, pointY) and matrix[pointX][pointY] == 7:
                 matches += 1
     return matches
 
@@ -225,23 +225,23 @@ def edit_point(x, y, action, value = None):
         # action = value
 
         action = 7
-        if matrix[x][y] != 0:
+        if matrix[x][y] == 7:
             return
     else:
         action = 0
-        if matrix[x][y] == 0:
+        if matrix[x][y] != 7:
             return
 
     for i in range(left, right):
         for j in range(left, right):
             if valid_point(x+i, y+j):
-                try:
+                if action == 0 and matrix[x+i][y+j] == 7:
                     matrix[x+i][y+j] = action
-                except Exception as e:
-                    print('edit_point', e)
-                    print ("Edit point: " + str(x+i) + " " + str(y+j))
+                elif action == 7:
+                    matrix[x+i][y+j] = action
 
 #Draw a line between two points
+
 def draw_line(startX, startY, endX, endY, action, value = None):
     minX, maxX = min(startX, endX), max(startX, endX)
     minY, maxY = min(startY, endY), max(startY, endY)
