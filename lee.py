@@ -4,8 +4,8 @@ from plotter import valid_point
 def check_crash(x, y, matrix):
     #Used -31 32, -29 30
     #Last -33 34 -30 31
-    for i in range(-33, 34, 3):
-        for j in range(-30, 31, 3):
+    for i in range(-31, 32, 4):
+        for j in range(-28, 29, 4):
             if valid_point(x+i, y+j) and matrix[x+i][y+j] != 7:
                 continue 
             return True
@@ -16,7 +16,7 @@ def motion_planning(startX, startY, goalX, goalY, matrix):
     queue = []
     queue.append((startX, startY))
 
-    step = 100
+    step = 50
     
     leeMatrix = [[0 for col in range(2001)] for row in range(2001)]
 
@@ -38,7 +38,7 @@ def motion_planning(startX, startY, goalX, goalY, matrix):
 
                     crashed = False
                     if maxX - minX >= maxY - minY:
-                        for x in range (minX, maxX, 30):
+                        for x in range (minX, maxX, 28):
                             y = int((-1) * (a * x + c) / b)
                             if check_crash(x, y, matrix):
                                 crashed = True
@@ -52,7 +52,7 @@ def motion_planning(startX, startY, goalX, goalY, matrix):
                         if check_crash(x, y, matrix):
                             crashed = True
                     else:
-                        for y in range (minY, maxY, 30):
+                        for y in range (minY, maxY, 28):
                             x = int((-1) * (b * y + c) / a)
                             if check_crash(x, y, matrix):
                                 crashed = True
@@ -99,7 +99,7 @@ def retrieve_path(leeMatrix, startX, startY, goalX, goalY):
                     min_distance = leeMatrix[destX][destY]
         if newX == 0 and newY == 0:
             print("Failed retrieving path")
-            return path
+            return []
         # print("path lee", leeMatrix[newX][newY])
         path.append((newX, newY))
         currentX, currentY = newX, newY

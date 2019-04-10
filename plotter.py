@@ -36,6 +36,8 @@ def init_map(testing = None):
 
 #Deal with lidar input from arduino
 def handle_scans():
+    "Receiving data and storing it in lists"
+
     global rawdata, wasSet, distances, arduino, baseTh, baseX, baseY, mapTh
     for angle in range(360):
         #Calculate angle using curent orientation of the robot
@@ -57,18 +59,14 @@ def handle_scans():
             print('hanlde_scans', e)
             print (rawdata[real_angle])
             
-    # baseX -= round(math.cos(math.radians(baseTh)) * travelDistance / 4);
-    # baseY -= round(math.sin(math.radians(baseTh)) * travelDistance / 4);
-
 #Update matrix map with current readings where distances read by ladar are scaled to 1/4
 def update_map(tag):
     global distances, rawdata, wasSet, matrix, baseX, baseY, baseTh, changed, arduino, mapTh
-    """Receiving data and storing it in a list"""
-    print("reading")
+    # print("reading")
 
-    print(datetime.datetime.now())
+    # print(datetime.datetime.now())
     handle_scans()
-    print(datetime.datetime.now())
+    # print(datetime.datetime.now())
 
     new_points = []
     k = m = -1
@@ -78,12 +76,12 @@ def update_map(tag):
     cluster_ind = 1
 
     count = 0 
-    print("finish read")
+    # print("finish read")
 
     for angle in range(360):
         real_angle = (angle + mapTh) % 360
         
-        if wasSet[real_angle] == 1:
+        if wasSet[real_angle] == 1 and distances[real_angle] > 0:
             changed[real_angle] = 1
 
             #Polar coordinates to cartesian coordinates
@@ -98,7 +96,7 @@ def update_map(tag):
             count+=1
 
             #Delete all points between current position of robot and observed point
-            draw_line(baseX, baseY, pointX, pointY, "delete")
+            # draw_line(baseX, baseY, pointX, pointY, "delete")
 
         #! Assuming we have no moving obstacles we don't need this else check for changed[angle] is 1
         elif changed[real_angle] == -1:
@@ -133,7 +131,7 @@ def update_map(tag):
             index += 1
 
     #Number of values where lidar returned a value
-    print("******* count: " + str(count))
+    # print("******* count: " + str(count))
     matrice.set_array(matrix)
 
     return matrice,

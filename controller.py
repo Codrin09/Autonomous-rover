@@ -55,8 +55,7 @@ def main(debug = None):
             #! Use decode to change bytes object to string
             message_received = str(arduino.readline()[:-2])[2:-1]
             if message_received:
-                print(message_received)
-
+                # print(message_received)
                 if message_received == "Create new path":
                     print("Creating new path")
                     #Show destination
@@ -78,15 +77,21 @@ def main(debug = None):
 
                 #Get new intermediate destination
                 nextX, nextY = path.pop(0)
-                # if len(path) > 0:
-                #     nextX, nextY = path.pop(0)
+                next_rotation = plotter.baseTh - round(math.degrees(math.atan2(nextY - plotter.baseY, nextX - plotter.baseX)))
+                while len(path) > 0:
+                    newX, newY = path[0]
+                    rotation_angle = plotter.baseTh - round(math.degrees(math.atan2(newY - nextY, newX - nextX)))
+                    if rotation_angle == next_rotation:
+                        nextX, nextY = path.pop(0)
+                    else:
+                        break
 
                 clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 14)
                 minX, maxX = min(plotter.baseX, nextX), max(plotter.baseX, nextX)
                 minY, maxY = min(plotter.baseY, nextY), max(plotter.baseY, nextY)
                 a, b, c = lee.line_equation(plotter.baseX, plotter.baseY, nextX, nextY)
+                
                 crashed = False
-
                 if maxX - minX >= maxY - minY:
                     for x in range (minX, maxX, 2):
                         y = int((-1) * (a * x + c) / b)
@@ -102,9 +107,17 @@ def main(debug = None):
                 if crashed == True:
                     print("Crashing after map update")
                     print("Creating new path")
-                    path = lee.motion_planning(plotter.baseX, plotter.baseY, goalX, goalY, plotter.matrix)
-                    if len(path) > 0 and path[-1] != (goalX, goalY): 
-                        path.append((goalX, goalY))
+                    foundPath = False
+                    while not foundPath:
+                        path = lee.motion_planning(plotter.baseX, plotter.baseY, goalX, goalY, plotter.matrix)
+                        if len(path) > 0:
+                            foundPath = True
+                            if path[-1] != (goalX, goalY): 
+                                path.append((goalX, goalY))
+                        else:
+                            send_msg("m 50 0")
+                            print("Going backwards")
+                            update_position(plotter, -1)
                     print(path)
                     nextX, nextY = path.pop(0)
 
@@ -125,52 +138,26 @@ def main(debug = None):
                     while incoming_msg.startswith("Finish rotate") == False:
                         incoming_msg = str(arduino.readline()[:-2])[2:-1]
                     
-                    print(incoming_msg)
+                    if rotation_angle != 0:
+                        rotation_angle /= abs(rotation_angle)
+                        rotation_angle *= int(incoming_msg.split(' ')[2])
 
-                    # if rotation_angle != 0:
-                    #     rotation_angle /= abs(rotation_angle)
-                    #     rotation_angle *= int(incoming_msg.split(' ')[2])
-
-                print("Rotation with", int(rotation_angle))
+                print("Rotation was", int(rotation_angle))
                 plotter.baseTh -= int(rotation_angle)
                 plotter.mapTh += int(rotation_angle)
-                print("Current rotation", plotter.baseTh)
+                print("New orientation is", plotter.baseTh)
                 
                 #Calculate distance between current location and new destination and send it to robot
                 distance = round(plotter.points_distance(plotter.baseX, plotter.baseY, nextX, nextY) * 4)
-                distance -= 0.1 * distance 
-                cmd = "m " + str(distance)
+                if distance < 200:
+                    distance /= 4
+                else:
+                    distance -= 0.2 * distance
+                cmd = "m " + str(distance) + " 1"
                 print("New command:",cmd)
                 send_msg(cmd)
 
-                #Remove robot from old location on matrix
-                clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 0)
-
-                #Wait for response from robot with actual traveled distance
-                finish_action = ''
-                while not finish_action.startswith("Distance"):
-                    finish_action = str(arduino.readline()[:-2])[2:-1]
-                    if finish_action:
-                        print(finish_action)
-
-                split = finish_action.split(":")
-                print(split)
-                
-                #Get new orientation from the gyro
-                new_orientation = ''
-                while not new_orientation.startswith("Orientation"):    
-                    new_orientation = str(arduino.readline()[:-2])[2:-1]
-                new_orientation = new_orientation.split(":")
-                delta_th = round(float(new_orientation[1]))
-                plotter.baseTh -= delta_th
-                plotter.mapTh += delta_th
-                print("New orientation delta", delta_th)
-
-                #Get new observations of landmarks and use them to aproximate new position
-                send_msg("l 1")
-                while str(arduino.readline()[:-2])[2:-1] != 'Sending lidar readings':
-                    pass
-                plotter.baseX, plotter.baseY, plotter.baseTh = plotter.get_position(float(split[1]) / 4)
+                update_position(plotter, 1)
 
                 #Update the map with new readings
                 send_msg("l 1")
@@ -189,12 +176,40 @@ def main(debug = None):
 #Clean noise from lidar around robot(we know for certain there is no obstacle where the robot lies)
 def clean_noise(matrix, baseX, baseY, value):
     for i in range(-31, 32):
-        for j in range(-29, 30): 
-            matrix[baseX+i][baseY+j] = value
+        for j in range(-28, 29): 
+            if matrix[baseX+i][baseY+j] != 7:
+                matrix[baseX+i][baseY+j] = value
     plotter.matrice.set_array(matrix)
     plt.draw()
     plt.pause(0.001)
     
+def update_position(plotter, direction):
+    #Remove robot from old location on matrix
+    clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 0)
+
+    #Wait for response from robot with actual traveled distance
+    finish_action = ''
+    while not finish_action.startswith("Distance"):
+        finish_action = str(arduino.readline()[:-2])[2:-1]
+
+    split = finish_action.split(":")
+    print(split)
+    
+    #Get new orientation from the gyro
+    new_orientation = ''
+    while not new_orientation.startswith("Orientation"):    
+        new_orientation = str(arduino.readline()[:-2])[2:-1]
+    new_orientation = new_orientation.split(":")
+    delta_th = round(float(new_orientation[1]))
+    plotter.baseTh -= delta_th
+    plotter.mapTh += delta_th
+    print("New orientation delta", delta_th)
+
+    #Get new observations of landmarks and use them to aproximate new position
+    send_msg("l 1")
+    while str(arduino.readline()[:-2])[2:-1] != 'Sending lidar readings':
+        pass
+    plotter.baseX, plotter.baseY, plotter.baseTh = plotter.get_position(direction * float(split[1]) / 4)
 
 #Deal with loss of bytes and retry until message was properly sent
 def send_msg(line):

@@ -91,7 +91,7 @@ void setup(){
   }
 
   digitalWrite(resetPin, HIGH);
-  delay(100);
+  delay(50);
   pinMode(resetPin, OUTPUT);
 
   setEncoders();
@@ -107,6 +107,7 @@ void setup(){
   speedScalar[2] = 4;
 
   setup_gyro();
+  Serial2.println("RoboBee is ready!");
 }
 
 void loop(){
@@ -127,6 +128,8 @@ void check_bt(){
     run_boogie(incomingData);
     //debug(incomingData);
   }
+
+  // get_gyro(true);
 }
 
 //Check if received command is valid(no lost bytes)
@@ -178,7 +181,7 @@ bool execute_cmd(String *cmd, String* output){
 
     //move
     case (int)'m':
-      if(!power_by_PID(cmd[1].toInt())){
+      if(!power_by_PID(cmd[1].toInt(), cmd[2].toInt())){
         *output = "Distance:" + String(get_travel_distance()) + ":0";
         return false;
       }
@@ -224,7 +227,7 @@ void run_boogie(String incomingData){
     message_to_cmd(incomingData, cmd);
 
     //If received move command update gyroscope orientation before executing
-    old_th = get_gyro();
+    old_th = get_gyro(true);
     bool exec_result = execute_cmd(cmd, &output);
 
     //!REMEMBER TO RESET MOTORS/TRAVEL DISTANCE
@@ -233,8 +236,7 @@ void run_boogie(String incomingData){
   //Send response back
   Serial2.println(output);
   if(cmd[0]=="m"){
-    // Serial.println("Orientation:" + String(old_th - get_gyro()));
-    Serial2.println("Orientation:" + String(old_th - get_gyro()));
+    Serial2.println("Orientation:" + String(old_th - get_gyro(false)));
   }
   free(cmd);
 }
@@ -242,21 +244,16 @@ void run_boogie(String incomingData){
 //Update the PID if enough time passed to gather encoder readings
 float update_speed(){
   //!Remember to update gyro to avoid FIFO overflow
-  update_gyro();
+  get_gyro(false);
+
   newMotorTime = micros();
   if(newMotorTime - oldMotorTime >= 100000){
     float total_spid = 0;
     float totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000000.0;
 
-    // Serial2.println(String(impulses[0]) + " "+ String(impulses[1]) + " " + String(impulses[2]) + " " + String(impulses[3]));
-    // Serial2.println(newMotorTime - oldMotorTime);
-
     //Approximate impulses per second from 100ms sample
     Input[0] = Input[2] = (impulses[0] + impulses[2]) * 1.0 / (2 * totalTime);
     Input[1] = Input[3] = (impulses[1] + impulses[3]) * 1.0 / (2 * totalTime);
-
-    // Serial2.println(String(Input[0]) + " "+ String(Input[1]));
-    // print_encoder_distances();
 
     //Calculate wheel rotations per second
     for(int i = 0; i < noOfMotors; i++){
@@ -328,11 +325,11 @@ void power_off_motors(){
 
 //Reset motors after movement
 void reset_motors(){
-  Serial2.println("Motors reset");
   for(int i = 0; i < noOfMotors; i++){
     motor_distance[i] = 0;
     impulses[i] = 0;
   }
+  set_motors_direction(true);
 }
 
 //Absolute method because arduino lib abs() can't handle floats :-?
@@ -361,8 +358,7 @@ int rotate(int deg, int anti_clock){
   digitalWrite(motorControl[start_reverse + 4], LOW);
 
   int val = quarterCircle * (deg * 1.0 / 90);
-  int gyro_old = get_gyro();
-  int gyro_turn = 0;
+  int gyro_old = get_gyro(true);
   int gyro_new;
 
   for(int i = 0; i < noOfMotors; i++){
@@ -371,11 +367,7 @@ int rotate(int deg, int anti_clock){
 
   bool turning = true;
   while(turning){
-    gyro_new = get_gyro();
-    if(absolute(gyro_new - gyro_old) < 10){
-      gyro_turn += absolute(gyro_new - gyro_old);
-    }
-    gyro_old = gyro_new;
+    get_gyro(false);
     for(int i = 0 ; i < noOfMotors; i++)
       if(impulses[i] >= val){
         turning = false;
@@ -388,10 +380,9 @@ int rotate(int deg, int anti_clock){
   digitalWrite(motorControl[start_reverse + 4], HIGH);
   reset_motors();
 
-  gyro_new = get_gyro();
-  gyro_turn += absolute(gyro_new - gyro_old);
-  // Serial2.println("Gyro turn " + String(gyro_turn));
-  return gyro_turn;
+  gyro_new = get_gyro(false);
+
+  return absolute(gyro_new - gyro_old);
 } 
 
 bool print_encoder_distances(){
@@ -414,177 +405,19 @@ bool print_encoder_distances(){
   return false;
 }
 
-//0-3 inidividual / 4 for all
-void test_motor(int motorNo){
-  if(millis() - oldMotorTime >= 1000){
-    newMotorTime = millis();
-    float totalTime = (newMotorTime - oldMotorTime) * 1.0 / 1000.0;
-
-    for(int i = 0; i < noOfMotors; i++){
-      if(motorNo == 4 || i == motorNo){
-        analogWrite(motorControl[2*i], 255);
-        spid[i] = 60 * (impulses[i] * 3.0 / 1000.0) / totalTime;  
-
-        impulses[i] = 0;
-      }
-    }
-    oldMotorTime = newMotorTime;
-  }
-}
-
 //Methods for encoder interrupts
 void interM0(){impulses[0]++; motor_distance[0] += distOnImpulse;}
 void interM1(){impulses[1]++; motor_distance[1] += distOnImpulse;}
 void interM2(){impulses[2]++; motor_distance[2] += distOnImpulse;}
 void interM3(){impulses[3]++; motor_distance[3] += distOnImpulse;}
 
-//Method used for debug and testing individual components
-void debug(String incomingData){
-  float new_th, old_th = 0;
-  bool stopping = false;
-  bool running = true;
-  switch(incomingData.toInt()){
-      case 1:
-        Serial2.println("Powering motors controlled by PID");
-        old_th = get_gyro();
-        for(int i = 0 ; i < 3; i++){
-          scanStartTime = millis();
-          while(check_lidar(&stopping, false));
-          send_readings();
-        }
-
-        oldMotorTime = micros();
-        power_by_PID(1000);
-        stopMotors();
-
-        Serial2.println("Get position");
-        while(true){
-          if(Serial2.available() > 0){
-            String input = Serial2.readString();
-            if(input.toInt() == 1)
-              break;
-          }
-        }
-
-        scanStartTime = millis();
-        while(check_lidar(&stopping, false));
-        send_readings();
-        //!REMEMBER TO RESET TRAVEL DISTANCE
-        reset_motors();
-
-        new_th = get_gyro();
-
-        Serial2.println("New orientation");
-        Serial2.println(old_th - new_th);
-
-        for(int i = 0 ; i < 2; i++){
-          scanStartTime = millis();
-          while(check_lidar(&stopping, false));
-          send_readings();
-        }
-        
-        Serial2.println("Finish operation 1");
-        break;
-      case 2:
-        Serial2.println("Powering motors at maximum speed without PID");
-        power_no_PID(1000, 255);
-
-        break;
-      case 3:
-        Serial2.println("Turn 45 degrees anti clockwise");
-        for(int i = 0 ; i < 3; i++){
-          scanStartTime = millis();
-          while(check_lidar(&stopping, false));
-          send_readings();
-        }
-
-        rotate(45, 1);
-
-        Serial2.println("Rotate");
-        Serial2.println("Get position");
-        while(true){
-          if(Serial2.available() > 0){
-            String input = Serial2.readString();
-            if(input.toInt() == 1)
-              break;
-          }
-        }
-
-        scanStartTime = millis();
-        while(check_lidar(&stopping, false));
-        send_readings();
-        //!REMEMBER TO RESET TRAVEL DISTANCE
-        reset_motors();
-
-        for(int i = 0 ; i < 2; i++){
-          scanStartTime = millis();
-          while(check_lidar(&stopping, false));
-          send_readings();
-        }
-
-        break;
-      case 4:
-        Serial2.println("Turn 90 degrees clockwise");
-        rotate(90, 1);
-        break;
-      case 5:
-        Serial2.println("Turn 45 degrees clockwise");
-        rotate(45, 0);
-        break;
-      case 6:
-        Serial2.println("Turn 90 degrees clockwise");
-        rotate(90, 0);
-        break;
-      case 7:
-        Serial2.println("Testing");
-        // Serial2.println("Calculate path");
-
-        while(true){
-          if(Serial2.available()){
-            String testData = Serial2.readString();
-
-            if(testData == "exit"){
-              break;
-            }
-          }
-        }
-        Serial2.println("Breaked");
-        break;
-      case 8:
-        Serial2.println("Start scanning and mapping");
-
-        running = true;
-        while(running){
-          // update_gyro();
-          scanStartTime = millis();
-          while(check_lidar(&stopping, false));
-          send_readings();
-          if(Serial2.available() > 0){
-            Serial2.readString();
-            running = false;
-          }
-        }
-        Serial2.println("Stop scanning");
-
-        break;
-      default:
-        Serial2.println("No valid command given");
-        break;
-    }
-    reset_motors();
-}
-
-void travel(){
-
-}
-
-bool power_by_PID(int dist){
-  //Take into account the time for breaking
-  dist *= 0.66;
+bool power_by_PID(int dist, int dir){
+  set_motors_direction(bool(dir));
 
   for(int i = 0; i < noOfMotors; i++){
     Setpoint[i] = desiredSpeed - speedScalar[i];
   }
+  
   bool stopping = false;
   while(true){
     update_speed();
@@ -598,4 +431,13 @@ bool power_by_PID(int dist){
       return true;
     }
   } 
+}
+
+bool set_motors_direction(bool dir){
+  for(int i = 0 ; i < noOfMotors; i++){
+    if(!dir)
+      digitalWrite(motorControl[2 * i + 1],1 - direction[i]);
+    else
+      digitalWrite(motorControl[2 * i + 1], direction[i]);
+  }
 }

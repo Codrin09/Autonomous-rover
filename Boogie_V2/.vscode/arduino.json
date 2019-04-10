@@ -1,7 +1,7 @@
 {
     "board": "arduino:avr:mega",
     "port": "/dev/cu.usbmodem14201",
-    "sketch": "../Gyro/Gyro.ino",
+    "sketch": "Boogie_V2.ino",
     "programmer": "AVRISP mkII",
     "configuration": "cpu=atmega2560"
 }
