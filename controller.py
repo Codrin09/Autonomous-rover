@@ -55,7 +55,7 @@ def main(debug = None):
             #! Use decode to change bytes object to string
             message_received = str(arduino.readline()[:-2])[2:-1]
             if message_received:
-                # print(message_received)
+                print(message_received)
                 if message_received == "Create new path":
                     print("Creating new path")
                     #Show destination
@@ -72,7 +72,7 @@ def main(debug = None):
 
                     crashing = False
                     for angle in range(360):
-                        if plotter.distances[angle] < 150 and plotter.distances[angle] > 30:
+                        if plotter.distances[angle] < 150 and plotter.distances[angle] > 100:
                             crashing = True
                             break
                     if crashing:

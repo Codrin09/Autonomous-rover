@@ -78,7 +78,7 @@ def update_map(tag, new_reading):
     for angle in range(360):
         real_angle = (angle + mapTh) % 360
         
-        if wasSet[real_angle] == 1 and distances[real_angle] > 30:
+        if wasSet[real_angle] == 1 and distances[real_angle] > 100:
             changed[real_angle] = 1
 
             #Polar coordinates to cartesian coordinates
