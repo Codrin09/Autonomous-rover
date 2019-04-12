@@ -14,7 +14,7 @@ from debug import *
 """Opening of the serial port"""
 try:
     # arduino = serial.Serial("/dev/tty.usbmodem14101", 115200)
-    arduino = serial.Serial("/dev/tty.HC-05-DevB", 115200, timeout = 2)
+    arduino = serial.Serial("/dev/tty.HC-05-DevB", 115200, timeout = 0.1)
     arduino.flushInput() #This gives the bluetooth a little kick
 except:
     print('Please check the port')
@@ -59,20 +59,33 @@ def main(debug = None):
                 if message_received == "Create new path":
                     print("Creating new path")
                     #Show destination
-                    clean_noise(plotter.matrix, goalX, goalY, 11)
+                    plot_object(plotter.matrix, goalX, goalY, 11)
                     #Show current location
-                    clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 14)
+                    plot_object(plotter.matrix, plotter.baseX, plotter.baseY, 14)
 
                     path = lee.motion_planning(plotter.baseX, plotter.baseY, goalX, goalY, plotter.matrix)
                     if len(path) > 0 and path[-1] != (goalX, goalY): 
                         path.append((goalX, goalY))
                     print(path)
                 elif message_received == "Sending lidar readings":
-                    plotter.update_map(0)
+                    plotter.update_map(0, True)
+
+                    crashing = False
+                    for angle in range(360):
+                        if plotter.distances[angle] < 150 and plotter.distances[angle] > 30:
+                            crashing = True
+                            break
+                    if crashing:
+                        send_msg("m 20 0")
+                        print("Going backwards")
+                        update_position(plotter, -1)
+                        send_msg("l 1")
+
                     plt.draw()
                     plt.pause(0.001)
             #If robot didn't complete path do next move
             elif len(path) > 0:
+                # print(datetime.datetime.now())
                 started = 1
 
                 #Get new intermediate destination
@@ -86,24 +99,10 @@ def main(debug = None):
                     else:
                         break
 
-                clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 14)
-                minX, maxX = min(plotter.baseX, nextX), max(plotter.baseX, nextX)
-                minY, maxY = min(plotter.baseY, nextY), max(plotter.baseY, nextY)
-                a, b, c = lee.line_equation(plotter.baseX, plotter.baseY, nextX, nextY)
+                plot_object(plotter.matrix, plotter.baseX, plotter.baseY, 14)
                 
-                crashed = False
-                if maxX - minX >= maxY - minY:
-                    for x in range (minX, maxX, 2):
-                        y = int((-1) * (a * x + c) / b)
-                        if lee.check_crash(x, y, plotter.matrix):
-                            crashed = True
-                            break;
-                else:
-                    for y in range (minY, maxY, 2):
-                        x = int((-1) * (b * y + c) / a)
-                        if lee.check_crash(x, y, plotter.matrix):
-                            crashed = True
-                            break;
+                crashed = lee.path_check(plotter.baseX, plotter.baseY, nextX, nextY, plotter.matrix)
+                        
                 if crashed == True:
                     print("Crashing after map update")
                     print("Creating new path")
@@ -115,12 +114,13 @@ def main(debug = None):
                             if path[-1] != (goalX, goalY): 
                                 path.append((goalX, goalY))
                         else:
-                            send_msg("m 50 0")
+                            send_msg("m 20 0")
                             print("Going backwards")
                             update_position(plotter, -1)
                     print(path)
                     nextX, nextY = path.pop(0)
 
+                # print(datetime.datetime.now())
                 #Calculate rotation angle for robot
                 rotation_angle = plotter.baseTh - round(math.degrees(math.atan2(nextY - plotter.baseY, nextX - plotter.baseX)))
                 if rotation_angle > 180:
@@ -160,7 +160,7 @@ def main(debug = None):
                 update_position(plotter, 1)
 
                 #Update the map with new readings
-                send_msg("l 1")
+                # send_msg("l 1")
             elif started == 1:
                 # Rotate to get in initial pose
                 rotation_angle = plotter.baseTh - 180
@@ -171,10 +171,10 @@ def main(debug = None):
 
                 started = 0
                 print("Target achieved")
-                clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 14)
+                plot_object(plotter.matrix, plotter.baseX, plotter.baseY, 14)
                 send_msg("q")
 #Clean noise from lidar around robot(we know for certain there is no obstacle where the robot lies)
-def clean_noise(matrix, baseX, baseY, value):
+def plot_object(matrix, baseX, baseY, value):
     for i in range(-31, 32):
         for j in range(-28, 29): 
             if matrix[baseX+i][baseY+j] != 7:
@@ -185,12 +185,13 @@ def clean_noise(matrix, baseX, baseY, value):
     
 def update_position(plotter, direction):
     #Remove robot from old location on matrix
-    clean_noise(plotter.matrix, plotter.baseX, plotter.baseY, 0)
+    plot_object(plotter.matrix, plotter.baseX, plotter.baseY, 0)
 
     #Wait for response from robot with actual traveled distance
     finish_action = ''
     while not finish_action.startswith("Distance"):
         finish_action = str(arduino.readline()[:-2])[2:-1]
+        # print(finish_action)
 
     split = finish_action.split(":")
     print(split)
@@ -206,17 +207,26 @@ def update_position(plotter, direction):
     print("New orientation delta", delta_th)
 
     #Get new observations of landmarks and use them to aproximate new position
+    print("Waiting for new lidar reading")
+    # print(datetime.datetime.now())
     send_msg("l 1")
+    # print(datetime.datetime.now())
     while str(arduino.readline()[:-2])[2:-1] != 'Sending lidar readings':
         pass
     plotter.baseX, plotter.baseY, plotter.baseTh = plotter.get_position(direction * float(split[1]) / 4)
 
+    print("Updating map")
+    # print(datetime.datetime.now())
+    plotter.update_map(0, False)
+    # print(datetime.datetime.now())
+
 #Deal with loss of bytes and retry until message was properly sent
 def send_msg(line):
     line = add_checksum(line)
-    response = None
+    response = "Send again"
     while response != "Success":
-        arduino.write(line.encode())
+        if response == "Send again":
+            arduino.write(line.encode())
         response = str(arduino.readline()[:-2])[2:-1]
 
 #Xor checksum for message

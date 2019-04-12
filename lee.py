@@ -11,6 +11,35 @@ def check_crash(x, y, matrix):
             return True
     return False
 
+def path_check(currentX, currentY, destX, destY, matrix):
+    minX, maxX = min(currentX, destX), max(currentX, destX)
+    minY, maxY = min(currentY, destY), max(currentY, destY)
+    a, b, c = line_equation(currentX, currentY, destX, destY)
+
+    crashed = False
+    if maxX - minX >= maxY - minY:
+        for x in range (minX, maxX, 28):
+            y = int((-1) * (a * x + c) / b)
+            if check_crash(x, y, matrix):
+                crashed = True
+                break;
+        x = maxX
+        y = int((-1) * (a * x + c) / b)
+        if check_crash(x, y, matrix):
+            crashed = True
+    else:
+        for y in range (minY, maxY, 28):
+            x = int((-1) * (b * y + c) / a)
+            if check_crash(x, y, matrix):
+                crashed = True
+                break;
+        y = maxY
+        x = int((-1) * (b * y + c) / a)
+        if check_crash(x, y, matrix):
+            crashed = True   
+
+    return crashed
+
 def motion_planning(startX, startY, goalX, goalY, matrix):
     global step
     queue = []
@@ -32,35 +61,9 @@ def motion_planning(startX, startY, goalX, goalY, matrix):
                 destX = currentX + i * step
                 destY = currentY + j * step
                 if(valid_point(destX, destY)) and (destX != currentX or destY != currentY):
-                    minX, maxX = min(currentX, destX), max(currentX, destX)
-                    minY, maxY = min(currentY, destY), max(currentY, destY)
-                    a, b, c = line_equation(currentX, currentY, destX, destY)
-
-                    crashed = False
-                    if maxX - minX >= maxY - minY:
-                        for x in range (minX, maxX, 28):
-                            y = int((-1) * (a * x + c) / b)
-                            if check_crash(x, y, matrix):
-                                crashed = True
-                                break;
-                        try:
-                            x = maxX
-                            y = int((-1) * (a * x + c) / b)
-                        except Exception as e:
-                            print(e)
-                            print("lee", currentX, currentY, destX, destY)
-                        if check_crash(x, y, matrix):
-                            crashed = True
-                    else:
-                        for y in range (minY, maxY, 28):
-                            x = int((-1) * (b * y + c) / a)
-                            if check_crash(x, y, matrix):
-                                crashed = True
-                                break;
-                        y = maxY
-                        x = int((-1) * (b * y + c) / a)
-                        if check_crash(x, y, matrix):
-                            crashed = True    
+                    
+                    crashed = path_check(currentX, currentY, destX, destY, matrix)
+ 
                     if crashed == False and (destX != startX or destY != startY) and (leeMatrix[destX][destY] == 0 or (leeMatrix[currentX][currentY] + 1) < leeMatrix[destX][destY]):
                         dist = 0
                         if i * j == -1 or i * j == 1:

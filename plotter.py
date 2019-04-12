@@ -60,13 +60,10 @@ def handle_scans():
             print (rawdata[real_angle])
             
 #Update matrix map with current readings where distances read by ladar are scaled to 1/4
-def update_map(tag):
+def update_map(tag, new_reading):
     global distances, rawdata, wasSet, matrix, baseX, baseY, baseTh, changed, arduino, mapTh
-    # print("reading")
-
-    # print(datetime.datetime.now())
-    handle_scans()
-    # print(datetime.datetime.now())
+    if new_reading:
+        handle_scans()
 
     new_points = []
     k = m = -1
@@ -81,7 +78,7 @@ def update_map(tag):
     for angle in range(360):
         real_angle = (angle + mapTh) % 360
         
-        if wasSet[real_angle] == 1 and distances[real_angle] > 0:
+        if wasSet[real_angle] == 1 and distances[real_angle] > 30:
             changed[real_angle] = 1
 
             #Polar coordinates to cartesian coordinates
@@ -362,5 +359,5 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, signal_handler)
     # ani = animation.FuncAnimation(fig, update, frames=200, init_func = init, blit = True)
-    ani = animation.FuncAnimation(fig, update_map(0), frames=200, interval=200, init_func = init_map(True), blit = True)
+    ani = animation.FuncAnimation(fig, update_map(0, True), frames=200, interval=200, init_func = init_map(True), blit = True)
     plt.show()
