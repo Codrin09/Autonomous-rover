@@ -66,13 +66,14 @@ def main(debug = None):
                     path = lee.motion_planning(plotter.baseX, plotter.baseY, goalX, goalY, plotter.matrix)
                     if len(path) > 0 and path[-1] != (goalX, goalY): 
                         path.append((goalX, goalY))
+                    
                     print(path)
                 elif message_received == "Sending lidar readings":
                     plotter.update_map(0, True)
 
                     crashing = False
                     for angle in range(360):
-                        if plotter.distances[angle] < 150 and plotter.distances[angle] > 100:
+                        if plotter.distances[angle] < 150 and plotter.distances[angle] > 100 and plotter.wasSet[angle] == 1:
                             crashing = True
                             break
                     if crashing:
@@ -94,11 +95,13 @@ def main(debug = None):
                 while len(path) > 0:
                     newX, newY = path[0]
                     rotation_angle = plotter.baseTh - round(math.degrees(math.atan2(newY - nextY, newX - nextX)))
-                    if rotation_angle == next_rotation:
+                    #! Check for close angle +- 10 deg instead of equal
+                    if abs(rotation_angle - next_rotation) < 22:
                         nextX, nextY = path.pop(0)
                     else:
                         break
 
+                plot_object(plotter.matrix, goalX, goalY, 11)
                 plot_object(plotter.matrix, plotter.baseX, plotter.baseY, 14)
                 
                 crashed = lee.path_check(plotter.baseX, plotter.baseY, nextX, nextY, plotter.matrix)
@@ -173,6 +176,7 @@ def main(debug = None):
                 print("Target achieved")
                 plot_object(plotter.matrix, plotter.baseX, plotter.baseY, 14)
                 send_msg("q")
+
 #Clean noise from lidar around robot(we know for certain there is no obstacle where the robot lies)
 def plot_object(matrix, baseX, baseY, value):
     for i in range(-31, 32):

@@ -112,6 +112,9 @@ void setup(){
 
 void loop(){
   check_bt();
+
+  //! New add for gyro
+  accelgyro.resetFIFO();
 }
 
 void check_bt(){

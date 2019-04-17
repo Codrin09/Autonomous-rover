@@ -124,7 +124,8 @@ def update_map(tag, new_reading):
         real_angle = (angle + mapTh) % 360
         if cluster[real_angle] != 0:
             newX, newY = new_points[index]
-            edit_point(newX, newY, "create", cluster[real_angle])
+            #!cluster[real_angle] as value
+            edit_point(newX, newY, "create")
             index += 1
 
     #Number of values where lidar returned a value
@@ -216,14 +217,17 @@ def edit_point(x, y, action, value = None):
         return
 
     if action == "create":
-        #Assign to action the edge number if needed
-        # action = value
+        if value == None:
+            action = 7
+        else:
+            action = value
 
-        action = 7
         if matrix[x][y] == 7:
             return
     else:
         action = 0
+        left += 2
+        right -= 2
         if matrix[x][y] != 7:
             return
 
@@ -244,12 +248,16 @@ def draw_line(startX, startY, endX, endY, action, value = None):
     #max - 2 because of 2 * padding / min + 3 because 2*padding + 1
     padding_min = 2 * 6 + 1
     padding_max = 2 * 6
+    step = 11
+
+    if action == "delete":
+        step = 7
 
     if startX == endX:
-        for y in range(minY + padding_min, maxY - padding_max):
+        for y in range(minY + padding_min, maxY - padding_max, step):
             edit_point(startX, y, action, value)
     elif startY == endY:
-        for x in range(minX + padding_min, maxX - padding_max):
+        for x in range(minX + padding_min, maxX - padding_max, step):
             edit_point(x, startY, action, value)
     else:
         #Calculate line equation if points are not on same axis and draw between them 
@@ -257,11 +265,11 @@ def draw_line(startX, startY, endX, endY, action, value = None):
         b = endX - startX
         c = startX * (endY - startY) + startY * (startX - endX)
         if maxX - minX >= maxY - minY:
-            for x in range (minX + padding_min, maxX - padding_max):
+            for x in range (minX + padding_min, maxX - padding_max, step):
                 y = int((-1) * (a * x + c) / b)
                 edit_point(x, y, action, value)
         else:
-            for y in range (minY + padding_min, maxY - padding_max):
+            for y in range (minY + padding_min, maxY - padding_max, step):
                 x = int((-1) * (b * y + c) / a)
                 edit_point(x, y, action, value)
     
